@@ -1,0 +1,310 @@
+domain: dev.bigbang.mil
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+  istio:
+    enabled: false
+    injection: "enabled"
+    # Mutual TLS configuration
+    mtls:
+      mode: STRICT # STRICT, PERMISSIVE, or DISABLE
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+  routes:
+    inbound:
+      # NeuVector web UI route
+      neuvector:
+        enabled: true
+        gateways:
+          - istio-gateway/public-ingressgateway
+        hosts:
+          - neuvector.{{ .Values.domain }}
+        service: neuvector-service-webui
+        port: 8443
+        selector:
+          app: neuvector-manager-pod
+  networkPolicies:
+    enabled: false
+    egress:
+      from:
+        # Controller egress to Kubernetes API
+        controller:
+          podSelector:
+            matchLabels:
+              app: neuvector-controller-pod
+          to:
+            definition:
+              kubeAPI: true
+        # Adapter egress to Kubernetes API
+        adapter:
+          podSelector:
+            matchLabels:
+              app: neuvector-registry-adapter-pod
+          to:
+            definition:
+              kubeAPI: true
+        # Updater egress to Kubernetes API
+        updater:
+          podSelector:
+            matchLabels:
+              app: neuvector-updater-pod
+          to:
+            definition:
+              kubeAPI: true
+        # Cert upgrader egress to Kubernetes API
+        cert-upgrader:
+          podSelector:
+            matchLabels:
+              app: neuvector-cert-upgrader-pod
+          to:
+            definition:
+              kubeAPI: true
+        # Enforcer egress to Kubernetes API
+        enforcer:
+          podSelector:
+            matchLabels:
+              app: neuvector-enforcer-pod
+          to:
+            definition:
+              kubeAPI: true
+        # Scanner egress to Kubernetes API
+        scanner:
+          podSelector:
+            matchLabels:
+              app: neuvector-scanner-pod
+          to:
+            definition:
+              kubeAPI: true
+    # Ingress policies
+    ingress:
+      to:
+        # Prometheus exporter ingress from monitoring on port 8068
+        exporter:8068:
+          podSelector:
+            matchLabels:
+              app: neuvector-prometheus-exporter-pod
+          from:
+            k8s:
+              monitoring/prometheus: true
+# NeuVector enforcers/controllers run privileged with host access for runtime
+# inspection, which Big Bang's kyverno policies deny; this mirrors the
+# carve-out the umbrella makes for the neuvector pods.
+kyvernoPolicyException:
+  enabled: true
+  # kyverno's configured exceptionNamespace
+  namespace: kyverno
+  policies:
+    - add-default-capability-drop
+    - add-default-securitycontext
+    - disallow-host-namespaces
+    - disallow-privileged-containers
+    - require-drop-all-capabilities
+    - require-non-root-group
+    - require-non-root-user
+    - restrict-host-path-mount
+    - restrict-host-path-write
+    - restrict-volume-types
+monitoring:
+  enabled: false
+  namespace: monitoring
+# Bigbang helm test values default disabled
+bbtests:
+  enabled: false
+  updater:
+    enabled: false
+  scripts:
+    envs:
+      URL: "http://neuvector-service-webui.{{ .Release.Namespace }}.svc.cluster.local:8443"
+global: # required for rancher authentication (https://<Rancher_URL>/)
+  imagePullSecrets:
+  images:
+    neuvector_csp_pod:
+      tag: latest
+      image: neuvector-billing-azure-by-suse-llc
+      registry: registry.suse.de/suse/sle-15-sp5/update/pubclouds/images
+      imagePullPolicy: Always
+    controller:
+      tag: 5.5.1
+      image: controller
+      registry: registry1.dso.mil/ironbank/neuvector/neuvector
+    manager:
+      tag: 5.5.1
+      image: manager
+      registry: registry1.dso.mil/ironbank/neuvector/neuvector
+    enforcer:
+      tag: 5.5.1
+      image: enforcer
+      registry: registry1.dso.mil/ironbank/neuvector/neuvector
+# -- Values to pass to [the upstream NeuVector core subchart](https://github.com/neuvector/neuvector-helm/blob/master/charts/core/values.yaml)
+# @default -- Upstream chart values for Neuvector core
+upstream:
+  nameOverride: neuvector
+  fullnameOverride: neuvector-neuvector
+  bootstrapPassword: changeme$! # neuvector enforces a mandatory password change on first login
+  openshift: false
+  registry: registry1.dso.mil
+  tag: 5.5.1
+  imagePullSecrets: private-registry
+  crdwebhook:
+    enabled: false
+  controller:
+    # If false, controller will not be installed
+    enabled: true
+    image:
+      repository: ironbank/neuvector/neuvector/controller
+      imagePullPolicy: Always
+    podAnnotations:
+      traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+    containerSecurityContext:
+      privileged: true
+      runAsUser: 1000
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+    certupgrader:
+      imagePullPolicy: Always
+      podAnnotations:
+        traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+        traffic.sidecar.istio.io/excludeOutboundPorts: "18500"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+    apisvc:
+      type: ClusterIP
+      annotations: {}
+      nodePort: null
+    prime:
+      enabled: false
+      image:
+        repository: neuvector/compliance-config
+        tag: 5.4.8
+  enforcer:
+    enabled: true
+    image:
+      repository: ironbank/neuvector/neuvector/enforcer
+      imagePullPolicy: Always
+    podAnnotations:
+      traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+    containerSecurityContext:
+      privileged: true
+      runAsGroup: 1000
+      capabilities:
+        drop:
+          - ALL
+  manager:
+    enabled: true
+    image:
+      repository: ironbank/neuvector/neuvector/manager
+      imagePullPolicy: Always
+    env:
+      ssl: false
+    podAnnotations:
+      traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+    containerSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+  cve:
+    adapter:
+      enabled: false
+      image:
+        repository: ironbank/opensource/neuvector/registry-adapter
+        tag: v0.2.6
+      podAnnotations:
+        traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+    updater:
+      enabled: true
+      secure: false
+      cacert: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      image:
+        registry: "registry1.dso.mil"
+        repository: ironbank/big-bang/base
+        tag: 2.1.0
+        imagePullPolicy: Always
+      podAnnotations:
+        traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+    scanner:
+      enabled: true
+      image:
+        repository: ironbank/neuvector/neuvector/scanner
+        tag: "6"
+        imagePullPolicy: Always
+      podAnnotations:
+        traffic.sidecar.istio.io/excludeInboundPorts: "18500"
+      runAsUser:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+# Monitor subchart:
+# From https://github.com/neuvector/neuvector-helm/blob/master/charts/monitor/values.yaml
+monitor:
+  imagePullSecrets: private-registry
+  install: false
+  serviceAccount: default
+  registry: registry1.dso.mil
+  exporter:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+    svc:
+      enabled: false
+    image:
+      repository: ironbank/neuvector/neuvector/prometheus-exporter
+      tag: 1-1.0.0
+      imagePullPolicy: Always
+    containerSecurityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      capabilities:
+        drop:
+          - ALL

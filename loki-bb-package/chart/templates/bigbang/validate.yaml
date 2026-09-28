@@ -1,0 +1,9 @@
+{{- if not .Values.experimentalMode.enabled }}
+{{- if and (lt (int .Values.upstream.backend.replicas) 2) (ne .Values.upstream.deploymentMode "SingleBinary") }}
+{{- fail "Loki backend.replicas must be set to 2 or greater." }}
+{{- end }}
+
+{{- if (lt (int .Values.upstream.backend.autoscaling.minReplicas) 2) }}
+{{- fail "Loki backend.autoscaling.minReplicas must be set to 2 or greater." }}
+{{- end }}
+{{- end }}

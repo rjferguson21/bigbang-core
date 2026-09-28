@@ -1,0 +1,14 @@
+{
+  "name": "bigbang-playwright-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Playwright test suite for Big Bang core packages (replaces per-package in-chart cypress tests)",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

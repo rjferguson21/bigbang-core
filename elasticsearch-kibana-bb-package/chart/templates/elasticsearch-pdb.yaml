@@ -1,0 +1,61 @@
+{{- /*
+Per-nodeSet PodDisruptionBudget resources. Rendered only when a nodeSet's
+podDisruptionBudget.enabled is true. Mutually exclusive with elasticsearch.clusterPodDisruptionBudget;
+set clusterPodDisruptionBudget.enabled: false when using per-nodeSet PDBs (enforced by a fail guard
+in elasticsearch.yaml).
+
+Default maxUnavailable: master and data nodes default to 1; ingest, ml, and coord default to 0
+(safe for single-node deployments). Supply spec.minAvailable or spec.maxUnavailable to override;
+setting both is rejected by Kubernetes and fails at template render time.
+
+Pod selector uses the ECK-managed label:
+  elasticsearch.k8s.elastic.co/statefulset-name: <release>-es-<nodeSetName>
+*/ -}}
+
+{{- define "elasticsearch.nodeSetPDB" -}}
+{{- $root := index . 0 -}}
+{{- $nodeSetName := index . 1 -}}
+{{- $nodeSet := index . 2 -}}
+{{- if dig "podDisruptionBudget" "enabled" false $nodeSet }}
+{{- $pdbSpec := dig "podDisruptionBudget" "spec" dict $nodeSet }}
+{{- if hasKey $pdbSpec "selector" }}
+  {{- fail (printf "elasticsearch.%s.podDisruptionBudget.spec.selector is managed by the chart and cannot be set" $nodeSetName) }}
+{{- end }}
+{{- if and (hasKey $pdbSpec "minAvailable") (hasKey $pdbSpec "maxUnavailable") }}
+  {{- fail (printf "elasticsearch.%s.podDisruptionBudget.spec: minAvailable and maxUnavailable are mutually exclusive" $nodeSetName) }}
+{{- end }}
+{{- $defaultMaxUnavailable := 1 }}
+{{- if has $nodeSetName (list "ingest" "ml" "coord") }}
+{{- $defaultMaxUnavailable = 0 }}
+{{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $root.Release.Name }}-es-{{ $nodeSetName }}
+  namespace: {{ $root.Release.Namespace }}
+  labels: {{- include "elasticsearch.labels" $root | nindent 4 }}
+spec:
+  {{- if or (hasKey $pdbSpec "minAvailable") (hasKey $pdbSpec "maxUnavailable") }}
+  {{- toYaml $pdbSpec | nindent 2 }}
+  {{- else }}
+  {{- $defaults := dict "maxUnavailable" $defaultMaxUnavailable "unhealthyPodEvictionPolicy" "AlwaysAllow" }}
+  {{- toYaml (mergeOverwrite (deepCopy $defaults) $pdbSpec) | nindent 2 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      elasticsearch.k8s.elastic.co/statefulset-name: {{ $root.Release.Name }}-es-{{ $nodeSetName }}
+{{- end }}
+{{- end }}
+
+{{- include "elasticsearch.nodeSetPDB" (list . "master" .Values.elasticsearch.master) }}
+{{- include "elasticsearch.nodeSetPDB" (list . "data" .Values.elasticsearch.data) }}
+{{- if .Values.elasticsearch.ingest.enabled }}
+{{- include "elasticsearch.nodeSetPDB" (list . "ingest" .Values.elasticsearch.ingest) }}
+{{- end }}
+{{- if .Values.elasticsearch.ml.enabled }}
+{{- include "elasticsearch.nodeSetPDB" (list . "ml" .Values.elasticsearch.ml) }}
+{{- end }}
+{{- if .Values.elasticsearch.coord.enabled }}
+{{- include "elasticsearch.nodeSetPDB" (list . "coord" .Values.elasticsearch.coord) }}
+{{- end }}

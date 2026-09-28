@@ -1,0 +1,56 @@
+apiVersion: v2
+name: keycloak
+version: 7.3.0-bb.2
+appVersion: 26.7.2
+description: Keycloak.X - Open Source Identity and Access Management for Modern Applications and Services. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+keywords:
+- sso
+- idm
+- openid connect
+- saml
+- kerberos
+- oauth
+- ldap
+- keycloakx
+- quarkus
+home: https://www.keycloak.org/
+icon: https://www.keycloak.org/resources/images/keycloak_logo_200px.svg
+sources:
+- https://github.com/codecentric/helm-charts
+- https://github.com/keycloak/keycloak/tree/main/quarkus/container
+- https://github.com/bitnami/charts/tree/main/bitnami/postgresql
+dependencies:
+- name: keycloakx
+  version: 7.3.0
+  repository: https://codecentric.github.io/helm-charts
+  alias: upstream
+  import-values:
+  - child: service
+    parent: keycloakx.service
+  - child: http
+    parent: keycloakx.http
+  - child: test
+    parent: keycloakx.test
+  - child: image
+    parent: keycloakx.image
+- name: postgresql
+  version: 18.8.13
+  repository: oci://registry-1.docker.io/bitnamicharts
+  condition: postgresql.enabled
+- name: gluon
+  version: 1.1.8
+  repository: oci://registry1.dso.mil/bigbang
+annotations:
+  bigbang.dev/maintenanceTrack: bb_integrated
+  helm.sh/images: |
+    - name: keycloak
+      image: registry1.dso.mil/ironbank/opensource/keycloak/keycloak:26.7.2
+    - name: postgresql
+      condition: postgresql.enabled
+      image: registry1.dso.mil/ironbank/opensource/postgres/postgresql:18.4
+    - name: base
+      condition: bbtests.enabled
+      image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    - [Find upstream chart's release notes and CHANGELOG here](https://github.com/codecentric/helm-charts/releases)
+    - [Find upstream keycloak project's release notes and CHANGELOG here](https://www.keycloak.org/docs/latest/release_notes/index.html)

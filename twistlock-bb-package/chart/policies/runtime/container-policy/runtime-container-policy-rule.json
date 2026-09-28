@@ -1,0 +1,99 @@
+{
+  "advancedProtectionEffect": "alert",
+  "kubernetesEnforcementEffect": "alert",
+  "cloudMetadataEnforcementEffect": "alert",
+  "wildFireAnalysis": "alert",
+  "processes": {
+    "modifiedProcessEffect": "alert",
+    "cryptoMinersEffect": "alert",
+    "lateralMovementEffect": "alert",
+    "reverseShellEffect": "alert",
+    "suidBinariesEffect": "alert",
+    "defaultEffect": "alert",
+    "checkParentChild": false,
+    "deniedList": {
+      "effect": "alert"
+    },
+    "disabled": false
+  },
+  "network": {
+    "modifiedProcEffect": "alert",
+    "portScanEffect": "alert",
+    "rawSocketsEffect": "alert",
+    "defaultEffect": "alert",
+    "listeningPorts": {
+      "effect": "alert"
+    },
+    "outboundPorts": {
+      "effect": "alert"
+    },
+    "deniedIPsEffect": "alert",
+    "disabled": false
+  },
+  "dns": {
+    "disabled": false,
+    "defaultEffect": "alert",
+    "domainList": {
+      "effect": "alert"
+    },
+    "effect": "alert"
+  },
+  "filesystem": {
+    "newFilesEffect": "alert",
+    "backdoorFilesEffect": "alert",
+    "encryptedBinariesEffect": "alert",
+    "suspiciousELFHeadersEffect": "alert",
+    "defaultEffect": "alert",
+    "deniedList": {
+      "effect": "alert"
+    },
+    "disabled": false
+  },
+  "customRules": [
+    {
+      "_id": 15
+    },
+    {
+      "_id": 16
+    },
+    {
+      "_id": 17
+    },
+    {
+      "_id": 18
+    },
+    {
+      "_id": 19
+    },
+    {
+      "_id": 20
+    },
+    {
+      "_id": 21
+    },
+    {
+      "_id": 22
+    },
+    {
+      "_id": 23
+    },
+    {
+      "_id": 24
+    },
+    {
+      "_id": 25
+    },
+    {
+      "_id": 26
+    },
+    {
+      "_id": 27
+    },
+    {
+      "_id": 28
+    },
+    {
+      "_id": 29
+    }
+  ]
+}

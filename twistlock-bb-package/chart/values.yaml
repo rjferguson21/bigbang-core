@@ -1,0 +1,555 @@
+# -- domain to use for virtual service
+domain: dev.bigbang.mil
+monitoring:
+  # -- Toggle monitoring integration, only used if init job is enabled,
+  # creates required metrics user, serviceMonitor, networkPolicy, etc
+  enabled: false
+  serviceMonitor:
+    scheme: ""
+    tlsConfig: {}
+# -- Configuration of Twistlock's SAML SSO capability.  This requires `init.enabled`=`true`, valid credentials, and a valid license. Refer to docs/KEYCLOAK.md for additional information.
+sso:
+  # -- Toggle SAML SSO
+  enabled: false
+  # -- SAML client ID
+  client_id: ""
+  # -- SAML Povider Alias (optional)
+  provider_name: ""
+  # -- SAML Identity Provider. `shibboleth` is recommended by Twistlock support for Keycloak
+  provider_type: "shibboleth"
+  # -- Identity Provider url with path to realm, example: `https://keycloak.bigbang.dev/auth/realms/baby-yoda`
+  issuer_uri: ""
+  # -- SAML Identity Provider SSO URL, example: `https://keycloak.bigbang.dev/auth/realms/baby-yoda/protocol/saml`
+  idp_url: ""
+  # -- Console URL of the Twistlock app. Example: `https://twistlock.bigbang.dev` (optional)
+  console_url: ""
+  # -- Groups attribute (optional)
+  groups: ""
+  # -- X.509 Certificate from Identity Provider (i.e. Keycloak). See docs/KEYCLOAK.md for format. Use the `\|-` syntax for multiline string
+  cert: ""
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+  istio:
+    # -- Toggle istio integration
+    enabled: false
+    # -- Toggle istio ambient mode (no sidecar)
+    ambient:
+      enabled: false
+    # -- Mutual TLS configuration
+    mtls:
+      # -- STRICT = Allow only mutual TLS traffic,
+      # PERMISSIVE = Allow both plain text and mutual TLS traffic
+      mode: STRICT
+    # -- Authorization policies configuration
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+      # Additional authorization policies
+      additionalPolicies:
+        allow-defender-to-console-port:
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: twistlock-console
+            action: ALLOW
+            rules:
+              - to:
+                  - operation:
+                      ports:
+                        - "8084"
+                        # -- Tempo authorization policy (for tracing)
+  routes:
+    # Inbound routes - generates VirtualService, ServiceEntry, NetworkPolicy, AuthorizationPolicy
+    inbound:
+      console:
+        enabled: true
+        gateways:
+          - istio-gateway/public-ingressgateway
+        hosts:
+          - twistlock.{{ .Values.domain }}
+        service: twistlock-console
+        port: 8081
+        selector:
+          app.kubernetes.io/name: twistlock-console
+    # Outbound routes - generates ServiceEntry for external services
+    outbound:
+      twistlock-intelligence:
+        enabled: true
+        hosts:
+          - intelligence.twistlock.com
+        ports:
+          - number: 443
+            name: https
+            protocol: TLS
+        location: MESH_EXTERNAL
+        resolution: DNS
+  networkPolicies:
+    # -- Toggle network policies
+    enabled: true
+    # Ingress rules for twistlock
+    ingress:
+      # Enable default ingress policies (denyAll, allowInNamespace, allowPrometheusToIstioSidecar)
+      defaults:
+        enabled: true
+      # Custom ingress definitions (reusable rules)
+      definitions:
+        # Node CIDR ranges for defender-to-console communication
+        # Hardcoded to default private network ranges for now
+        nodeCidrs:
+          from:
+            - ipBlock:
+                cidr: 10.0.0.0/8
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 100.64.0.0/10
+          ports:
+            - port: 8084
+              protocol: TCP
+      to:
+        # Console ingress from istio ingressgateway (HTTP management port)
+        twistlock-console:8081:
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: false
+            definition:
+              gateway: true
+        # Console ingress - defenders communicate on port 8084, ingressgateway also needs access
+        twistlock-console:8084:
+          from:
+            k8s:
+              twistlock/twistlock-defender: true
+            definition:
+              nodeCidrs: true
+    # Egress rules for twistlock
+    egress:
+      # Enable default egress policies (denyAll, allowInNamespace, allowKubeDns, allowIstiod)
+      defaults:
+        enabled: true
+      from:
+        "*":
+          to:
+            k8s:
+              tempo-tempo@tempo/tempo:9411: false
+        # Init job needs Kubernetes API access
+        twistlock-init:
+          to:
+            definition:
+              kubeAPI: true
+        # Console needs external HTTPS for Twistlock intelligence updates
+        twistlock-console:
+          to:
+            cidr:
+              0.0.0.0/0:443: true
+        # Volume upgrade job needs Kubernetes API access
+        egress-kube-api:
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: twistlock-volume-upgrade-job
+          metadata:
+            annotations:
+              "helm.sh/hook": pre-upgrade
+              "helm.sh/hook-weight": "-30"
+              "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+          to:
+            definition:
+              kubeAPI: true
+# Defenders run with host access and elevated privileges to scan the nodes,
+# and the console/volume-upgrade pods need users and volume types Big Bang's
+# kyverno policies deny; this is the same carve-out the umbrella makes for
+# twistlock pods.
+kyvernoPolicyException:
+  enabled: true
+  # kyverno's configured exceptionNamespace
+  namespace: kyverno
+  policies:
+    - add-default-capability-drop
+    - add-default-securitycontext
+    - disallow-host-namespaces
+    - disallow-tolerations
+    - require-drop-all-capabilities
+    - require-non-root-group
+    - require-non-root-user
+    - restrict-apparmor
+    - restrict-capabilities
+    - restrict-host-path-mount
+    - restrict-host-path-write
+    - restrict-selinux-type
+    - restrict-volume-types
+# -- Defines the secret to use when pulling the container images
+imagePullSecretName: private-registry
+# -- Run Twistlock Console and Defender with a dedicated SELinux label. See https://docs.docker.com/engine/reference/run/#security-configuration
+selinuxLabel: disable
+# -- systemd configuration
+systemd:
+  # -- option to install Twistlock as systemd service. true or false
+  enabled: false
+console:
+  # -- Enables or Disables data recovery. Values: true or false.
+  dataRecovery: true
+  image:
+    # -- Full image name for console
+    repository: registry1.dso.mil/ironbank/twistlock/console/console
+    # -- Full image tag for console
+    tag: 34.05.157
+    # -- Pull policy for console image
+    imagePullPolicy: IfNotPresent
+  ports:
+    # -- Enables the management HTTP listener.
+    managementHttp: 8081
+    # -- Enables the management HTTPS listener.
+    managementHttps: 8083
+    # -- Sets the port for communication between the Defender(s) and the Console
+    communication: 8084
+  # -- Sets the container security context for the console
+  securityContext:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 2674
+    runAsGroup: 2674
+    capabilities:
+      drop:
+        - ALL
+  persistence:
+    # -- Size of Twistlock PVC
+    size: 100Gi
+    # -- Access mode for Twistlock PVC
+    accessMode: ReadWriteOnce
+  # -- Additional environment variables for the console container.
+  # Use this to set Prisma-specific env vars (e.g., CORE_MIN_LOG_LEVEL) without a post-renderer.
+  # Example:
+  #   extraEnv:
+  #     - name: CORE_MIN_LOG_LEVEL
+  #       value: "WARNING"
+  extraEnv: []
+  # -- Enable syslog audit feature
+  # When integrating with BigBang, make sure to include an exception to Gatekeeper and/or Kyverno for Volume Types.
+  syslogAuditIntegration:
+    enabled: false
+  # -- Controls console container's resource constraints. Set to "true" to run without limits.
+  # See https://docs.docker.com/engine/reference/run/#runtime-constraints-on-resources
+  disableCgroupLimits: false
+  # -- The license key to use.  If not specified, the license must be installed manually.
+  license: ""
+  # -- Run Twistlock Console processes as root (default false, twistlock user account). Values: true or false
+  runAsRoot: false
+  # -- Required if init is enabled.  Admin account to use for configuration through API.  Will create account if Twistlock is a new install.  Otherwise, an existing account needs to be provided.
+  credentials:
+    # -- Username of account
+    username: "admin"
+    # -- Password of account
+    password: "change_this_password"
+  # -- Additional users to setup.  This requires `init.enabled`=`true`, valid credentials, and a valid license.
+  additionalUsers: []
+  # - # -- Username for the additional user (required)
+  #   username: ""
+  #   # -- Password if the user's authType is basic (a local user).  Password will never be updated if the user already exists.
+  #   password: ""
+  #   # -- Role based permissions for the user (required).  Valid values include 'admin', 'operator', 'auditor', 'devSecOps', 'vulnerabilityManager', 'devOps', 'defenderManager', 'user', and 'ci'.  See https://docs.paloaltonetworks.com/prisma/prisma-cloud/prisma-cloud-reference-architecture-compute/rbac/access_twistlock.
+  #   role: ""
+  #   # -- Auth type for the user (default is 'basic').  Valid values include 'basic', 'ldap', 'oauth', 'oidc', or 'saml'.
+  #   authType: ""
+  # -- Toggles whether to update the `additionalUsers` if the user is already created (e.g. on upgrades).  This would overwrite the existing user configuration.
+  updateUsers: false
+  # -- Additional users to setup.  This requires `init.enabled`=`true`, valid credentials, and a valid license.
+  groups: []
+  # - # -- name for the group (required)
+  #   group: ""
+  #   # -- Role based permissions for the group (required).  Valid values include 'admin', 'operator', 'cloudAccountManager', 'auditor', 'devSecOps', 'vulnerabilityManager', 'devOps', 'defenderManager', 'user', and 'ci'.  See https://docs.paloaltonetworks.com/prisma/prisma-cloud/prisma-cloud-reference-architecture-compute/rbac/access_twistlock.
+  #   role: ""
+  #   # -- Auth type for the group (required).  Valid values include 'ldapGroup', 'samlGroup', 'oauthGroup', or 'oidcGroup'. authType must already be configured as an identity provider in Twistlock a SSO groups are hidden until the associated authType is configured
+  #   authType: ""
+
+  options:
+    # -- Toggle setting all options in this section
+    enabled: true
+    # -- Network monitoring options
+    network:
+      # -- Toggle network monitoring of containers. Deprecated upstream (CNNS network-firewall enforcement, see https://docs.prismacloud.io/ce-release-notes/prisma-tm-cloud-compute-edition-release-information/release-notes-34-01#deprecation-notices); defaults to false as it is incompatible with Istio ambient (HBONE/ztunnel).
+      container: false
+      # -- Toggle network monitoring of hosts
+      host: true
+    # -- Toggle logging Prisma Cloud events to standard output
+    logging: true
+    # -- Toggle sending product usage data to Palo Alto Networks
+    telemetry: false
+    # NOTE: Prometheus metrics instrumentation is controlled by .monitoring.enabled
+    # -- Toggle intelligence settings
+    intelligence:
+      # -- Disables allowing admins/operators to upload logs to Customer Support directly from the Console UI
+      uploadDisabled: true
+    # -- Toggle scan settings
+    scan:
+      # -- Only scan images with running containers
+      scanRunningImages: false
+    # -- Toggle logon settings
+    logon:
+      # -- Enable SSO to Prisma Cloud Support
+      useSupportCredentials: false
+      # -- Require strong passwords for local accounts
+      requireStrongPassword: true
+      # -- Disables basic authentication. Note: Setting to true will prevent metrics scraping
+      basicAuthDisabled: false
+  # -- This value should be enabled when upgrading from a version <=0.10.0-bb.1 in order to allow the console to run as non-root
+  volumeUpgrade: true
+  # -- Trusted images allowlist policy. Despite the name, this is an evaluation
+  # policy, not a flat list. The chart manages one rule that allows the declared
+  # groups; deniedGroups takes precedence over allowedGroups.
+  trustedImages:
+    # -- Toggle chart management of the trust policy. When false, existing console state is left alone.
+    enabled: true
+    # -- Trust groups (allowlist bundles) managed by the chart. Each group's name is auto-included in `rule.allowedGroups`.
+    groups:
+      - name: BigBang-Trusted
+        registryMatches:
+          - "registry1.dso.mil/ironbank/*"
+    # -- Trust groups appended to `groups` at template time. For overlays (kustomize SMP, subchart values) that need to add without replacing the base list.
+    extraGroups: []
+    # -- The single chart-managed rule, prepended to the policy so it evaluates first.
+    rule:
+      name: "BigBang-Trusted"
+      # effect for images matching neither allowedGroups nor deniedGroups: ignore | alert | block
+      effect: alert
+      collections: ["All"]
+      deniedGroups: []
+  serviceAccount:
+    # -- Auto-mount the API token on the console ServiceAccount. Default false: the
+    # console SA exists only for OpenShift SCC and needs no token. Kyverno
+    # disallow-auto-mount-service-account-token compliance.
+    automountServiceAccountToken: false
+# -- Deployment mode configuration
+deploymentMode:
+  # Toggle defender-only mode. When enabled, skips deployment of twistlock console and only deploys a defender daemonset
+  # When enabled, the following values in the defender: section MUST be set in order for the chart to install properly.
+  # These values can be obtained from the API (console:8083/api/v1/defenders/daemonset.yaml, see defenders.sh) or directly from the Console UI 
+  # -- clusterName
+  # -- ws_address
+  # -- secrets: ... (service_parameter, defender_ca, defender_client_cert, defender_client_key, defender_ca_old, 
+  # --               defender_client_cert_old, defender_client_key_old, admission_cert, admission_key)
+  defenderOnly: false
+# -- Configuration of Twistlock's container defenders.  This requires `init.enabled`=`true`, valid credentials, and a valid license.
+defender:
+  enabled: true
+  # -- Image for Twistlock defender.  Leave blank to use twistlock official repo.
+  image:
+    # -- Repository and path for defender image
+    repository: registry1.dso.mil/ironbank/twistlock/defender/defender
+    # -- Image tag for defender
+    tag: 34.05.157
+  # Port to expose the Defender Admission Controller
+  servicePort: 443
+  serviceTargetPort: 9998
+  # Collects Namespace and Deployment labels as part of the Pod information
+  collect_pod_labels: true
+  # -- Wait for defender DaemonSet rollout to complete during init
+  waitForRollout: true
+  # This value should not be modified unless instructed to by Twistlock Support
+  certCn: ""
+  # -- Name of cluster
+  clusterName: ""
+  # -- Collect Deployment and Namespace labels
+  collectLabels: true
+  # -- Set containerRuntime option for Defenders ("docker", "containerd", or "crio")
+  containerRuntime: "containerd"
+  # -- Path to Docker socket.  Leave blank to use /var/run/docker.sock
+  dockerSocket: ""
+  # -- List of tolerations to be added to the Defender DaemonSet.
+  tolerations:
+    - operator: Exists
+  # -- Additional labels for Defender pods. When istio ambient mode is enabled, `istio.io/dataplane-mode: none`
+  # is added automatically to exclude the hostNetwork Defender from ambient capture (override here if needed)
+  podLabels: {}
+  # -- Sets the container security context dropped capabilities for the defenders
+  securityCapabilitiesDrop:
+    - ALL
+  # -- Sets the container security context added capabilities for the defenders
+  securityCapabilitiesAdd:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_ADMIN
+    - SYS_PTRACE
+    - SYS_CHROOT
+    - MKNOD
+    - SETFCAP
+    - IPC_LOCK
+  # -- Sets the type of the Docker listener (TCP or NONE)
+  dockerListenerType: ""
+  # -- Monitor service accounts
+  monitorServiceAccounts: true
+  # -- Monitor Istio
+  monitorIstio: true
+  # -- Node Selector for Defender DaemonSet
+  #nodeSelector:
+  #node-type: "defender"
+
+  # -- Security Context: readOnlyRootFileSystem
+  readOnlyRootFilesystem: true
+  # -- Run as privileged.  If `selinux` is `true`, this automatically gets set to `false`
+  privileged: false
+  # -- Proxy settings
+  proxy: {}
+  # address: "" # Address and port of the proxy
+  # ca: "" # CA certificate to trust (optional)
+  # username: "" # Proxy username (optional)
+  # password: "" # Proxy password (optional)
+
+  # -- Deploy with SELinux Policy
+  selinux: true
+  # -- Assign globally unique names to hosts
+  uniqueHostName: false
+  # -- Define resource limits and requests for the Defender DaemonSet
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "256m"
+      memory: "512Mi"
+  # -- Priority Class Name to prioritize pod scheduling
+  priorityClassName: ""
+  # -- Websocket address of the console the defender intends to connect to, generally in the format wss://URL:8084
+  ws_address: ""
+  # -- While defenderOnly is true, secrets containing certs need to be defined manually prior to deployment.
+  # -- These can be obtained from the Twistlock UI or contrib/defenders.sh script. 
+  secrets:
+    service_parameter: ""
+    defender_ca: ""
+    defender_client_cert: ""
+    defender_client_key: ""
+    defender_ca_old: ""
+    defender_client_cert_old: ""
+    defender_client_key_old: ""
+    admission_cert: ""
+    admission_key: ""
+  serviceAccount:
+    # -- Auto-mount the API token on the defender ServiceAccount (both defenderOnly Helm
+    # and init-script API paths). Default false: the defender still gets its token via an
+    # explicit projected volume (it queries the k8s API for MONITOR_SERVICE_ACCOUNTS /
+    # MONITOR_ISTIO / COLLECT_POD_LABELS).
+    automountServiceAccountToken: false
+# -- Configures defender policies.  This requires `init.enabled`=`true`, valid credentials, and a valid license.
+policies:
+  # -- Toggles configuration of defender policies
+  enabled: true
+  # -- Name to use as prefix to policy rules.
+  # NOTE: If you change the name after the initial deployment, you may end up with duplicate policy sets and need to manually cleanup old policies.
+  name: Default
+  # -- Vulnerability policies
+  vulnerabilities:
+    # -- Toggle deployment and updating of vulnerability policies
+    enabled: true
+    # -- The minimum severity to alert on
+    alertThreshold: medium
+  # -- Compliance policies
+  compliance:
+    # -- Toggle deployment and updating of compliance policies
+    enabled: true
+    # -- The policy templates to use.  Valid values are 'GDPR', 'DISA STIG', 'PCI', 'NIST SP 800-190', or 'HIPAA'
+    templates:
+      # - GDPR
+      - DISA STIG
+      # - PCI
+      - NIST SP 800-190
+    # - HIPAA
+    # -- If template does not apply, set policy to alert using this severity or higher.  Valid values are 'low', 'medium', 'high', or 'critical'.
+    alertThreshold: medium
+  # -- Runtime policies
+  runtime:
+    # -- Toggle deployment and updating of runtime policies
+    enabled: true
+# -- Initialization job.  Sets up users, license, container defenders, default policies, and other settings.
+init:
+  # -- Toggles the initialization on or off
+  enabled: true
+  # -- Initialization job image configuration
+  image:
+    # -- Repository and path to initialization image.  Image must contain `jq` and `kubectl`
+    repository: registry1.dso.mil/ironbank/big-bang/base
+    # -- Initialization image tag
+    tag: 2.1.0
+    # -- Initialization image pull policy
+    imagePullPolicy: IfNotPresent
+  # -- Configure Resources of the init Job -- #
+  resources:
+    limits:
+      cpu: 0.5
+      memory: 256Mi
+    requests:
+      cpu: 0.5
+      memory: 256Mi
+  serviceAccount:
+    # -- Auto-mount the API token on the init ServiceAccount. Default false: the init
+    # Job still gets its token via an explicit projected volume (it kubectl-applies the
+    # defender DaemonSet). Set true to fall back to k8s default automount.
+    automountServiceAccountToken: false
+# -- affinity for console pod
+affinity: {}
+# podAntiAffinity:
+#   requiredDuringSchedulingIgnoredDuringExecution:
+#     - topologyKey: "kubernetes.io/hostname"
+#       labelSelector:
+#         matchLabels:
+#           dont-schedule-with: twistlock"
+# nodeAffinity:
+#   requiredDuringSchedulingIgnoredDuringExecution:
+#     nodeSelectorTerms:
+#     - matchExpressions:
+#       - key: node-type
+#         operator: In
+#         values:
+#         - "twistlock"
+
+# -- nodeSelector for console pod
+nodeSelector: {}
+# node-type: twistlock"
+
+# -- tolerations for console pod
+tolerations: []
+# - key: "key1"
+#   operator: "Equal"
+#   value: "value1"
+#   effect: "NoSchedule"
+
+# -- labels for console pod
+podLabels: {}
+# -- annotations for console pod
+annotations: {}
+# bigbang.dev/istioVersion: 1.10.3
+
+# -- resources for console pod
+resources:
+  limits:
+    memory: 3Gi
+    cpu: 250m
+  requests:
+    memory: 3Gi
+    cpu: 250m
+# -- Toggle to setup special configuration for OpenShift clusters
+openshift: false
+bbtests:
+  # -- Toggle bbtests on/off for CI/Dev
+  enabled: false
+  scripts:
+    # -- Image to use for script tests
+    image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+    # -- Set envs for use in script tests
+    envs:
+      twistlock_host: "http://twistlock-console.twistlock.svc.cluster.local:8081"
+      desired_version: "{{ .Values.console.image.tag }}"
+      cypress_user: "{{ .Values.console.credentials.username }}"
+      cypress_password: "{{ .Values.console.credentials.password }}"
+waitJob:
+  image: registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.36
+  enabled: true
+  permissions:
+    apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]

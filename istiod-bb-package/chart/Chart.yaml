@@ -1,0 +1,28 @@
+apiVersion: v2
+name: istiod
+version: 1.30.4-bb.1
+appVersion: 1.30.4
+description: Helm chart for istio control plane. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+icon: https://istio.io/latest/favicons/android-192x192.png
+keywords:
+  - istio
+  - istiod
+  - istio-discovery
+sources:
+  - https://github.com/istio/istio
+dependencies:
+  - name: istiod
+    repository: https://blob.istio.io/istio-release/charts
+    version: 1.30.4
+    alias: upstream
+annotations:
+  bigbang.dev/passthrough: "true"
+  bigbang.dev/passthrough-toplevel-key: upstream
+  bigbang.dev/maintenanceTrack: bb_integrated
+  helm.sh/images: |
+    - name: pilot
+      image: registry1.dso.mil/ironbank/opensource/istio/pilot:1.30.4
+    - name: proxyv2
+      image: registry1.dso.mil/ironbank/opensource/istio/proxyv2:1.30.4
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    - [Find upstream chart's release notes and CHANGELOG here](https://istio.io/latest/news/releases)

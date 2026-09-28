@@ -1,0 +1,28 @@
+{{- if .Values.kyvernoPolicyException.enabled }}
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: {{ .Release.Name }}-twistlock
+  namespace: {{ .Values.kyvernoPolicyException.namespace }}
+spec:
+  background: true
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Deployment
+            - DaemonSet
+            - Job
+          namespaces:
+            - {{ .Release.Namespace }}
+          names:
+            - twistlock-console*
+            - twistlock-defender-ds*
+            - volume-upgrade*
+  exceptions:
+    {{- range .Values.kyvernoPolicyException.policies }}
+    - policyName: {{ . }}
+      ruleNames: ["*"]
+    {{- end }}
+{{- end }}

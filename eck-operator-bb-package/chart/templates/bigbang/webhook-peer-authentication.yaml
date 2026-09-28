@@ -1,0 +1,18 @@
+{{- if and .Values.bigbangPackage.istio.enabled (eq .Values.bigbangPackage.istio.mtls.mode "STRICT") }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: eck-operator-webhook-exception
+  namespace: {{ .Release.Namespace }}
+spec:
+  mtls:
+    mode: {{ .Values.bigbangPackage.istio.mtls.mode }}
+  selector:
+    matchLabels:
+      {{- include "eck-operator.selectorLabels" .Subcharts.upstream  | nindent 6 }}
+  portLevelMtls:
+    # The validating webhook communication is on port 9443
+    # This port is excluded from the sidecar traffic, so we need to add an mTLS "exception"
+    "9443":
+      mode: PERMISSIVE
+{{- end }}

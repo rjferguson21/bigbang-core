@@ -1,0 +1,13 @@
+{{- if .Values.bigbangPackage.istio.enabled }}
+apiVersion: "security.istio.io/v1beta1"
+kind: PeerAuthentication
+metadata:
+  name: metrics-exporter
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metrics
+  mtls:
+    mode: {{ .Values.bigbangPackage.istio.mtls.mode }}
+{{- end }}

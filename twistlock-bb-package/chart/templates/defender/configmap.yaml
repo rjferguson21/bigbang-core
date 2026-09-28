@@ -1,0 +1,16 @@
+{{- if .Values.deploymentMode.defenderOnly }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "twistlock-defender.name" . }}-cluster-id
+  namespace: {{ .Release.Namespace }}
+data:
+  {{- $cm := lookup "v1" "ConfigMap" .Release.Namespace (print (include "twistlock-defender.name" .) "-cluster-id") }}
+  {{- if $cm }}
+  # Cluster ID detected, reusing
+  DEFENDER_CLUSTER_ID: {{ index $cm.data "DEFENDER_CLUSTER_ID" }}
+  {{- else }}
+  # Generating a new cluster ID, mimicking the expected format from Twistlock's generator
+  DEFENDER_CLUSTER_ID: {{ randAlphaNum 8 | lower }}-{{ randAlphaNum 4 | lower }}-{{ randAlphaNum 4 | lower }}-{{ randAlphaNum 12 | lower }}
+  {{- end }}
+{{- end }}

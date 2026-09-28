@@ -1,0 +1,129 @@
+{{- if .Values.upgradeCrds.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-role
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
+rules:
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - patch
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-binding
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-cm
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-7"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
+  namespace: {{ .Release.Namespace }}
+data:
+  {{ (.Files.Glob "eck-operator-crds/templates/all-crds.yaml").AsConfig | nindent 2 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-5"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade
+      labels:
+        app.kubernetes.io/name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade
+    spec:
+      serviceAccountName: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-sa
+      containers:
+        - name: bb-{{ include "eck-operator.fullname" .Subcharts.upstream }}-upgrade
+          image: {{ .Values.upgradeCrds.image.repository }}:{{ .Values.upgradeCrds.image.tag }}
+          workingDir: /crds
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # Upgrade only needed if any CRDs are 1.6.0 version
+              if [[ $(kubectl get crd -l app.kubernetes.io/instance={{ .Release.Name }} -o jsonpath='{.items[*].metadata.labels.app\.kubernetes\.io/version}') == *1.6.0* ]]; then
+                echo "Running CRD upgrade steps..."
+                if [[ -f /src/all-crds.yaml ]]; then
+                  # Copy from mounted configmap to writable location
+                  cp /src/all-crds.yaml /crds/all-crds.yaml
+                  # Remove helm templating, labels will be re-added by normal upgrade
+                  sed -i '/{{ "{{" }}/d' /crds/all-crds.yaml
+                  # Force replace the CRDs due to breaking changes
+                  kubectl replace -f /crds/all-crds.yaml
+                  echo "CRDs upgraded."
+                else
+                  echo "CRDs not found...skipping."
+                fi
+              else
+                echo "No CRD upgrade steps needed!"
+              fi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: crds
+              mountPath: /src
+            - name: workdir
+              mountPath: /crds
+      {{- with .Values.upstream.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      volumes:
+        - name: crds
+          configMap:
+            name: {{ include "eck-operator.fullname" .Subcharts.upstream }}-crd-upgrade-cm
+        - name: workdir
+          emptyDir: {}
+{{- end }}

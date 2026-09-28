@@ -1,0 +1,128 @@
+{{- if and .Values.console.volumeUpgrade .Release.IsUpgrade (not .Values.deploymentMode.defenderOnly) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: volume-upgrade-job
+  labels:
+    {{- mergeOverwrite (include "twistlock-console.labels" . | fromYaml) (dict "name" "twistlock-volume-upgrade-job") | toYaml | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-25"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      name: {{ template "twistlock-console.name" . }}
+      namespace: {{ .Release.Namespace }}
+      labels:
+        {{- mergeOverwrite (include "twistlock-console.selector" . | fromYaml) (dict "app.kubernetes.io/name" "twistlock-volume-upgrade-job") | toYaml | nindent 8 }}
+      {{- if .Values.annotations }}
+      annotations:
+        {{ toYaml .Values.annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if .Values.imagePullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecretName }}
+      {{- end }}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: name
+                operator: In
+                values:
+                - {{ template "twistlock-console.name" . }}
+            topologyKey: "kubernetes.io/hostname"
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      restartPolicy: OnFailure
+      serviceAccountName: volume-upgrade-svc-acct
+      initContainers:
+      - name: init-scale-console
+        image: {{ .Values.init.image.repository }}:{{ .Values.init.image.tag }}
+        imagePullPolicy: {{ .Values.init.image.imagePullPolicy }}
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          runAsGroup: 0
+        command:
+          - /bin/bash
+          - -c
+          - |
+            useradd -u 2674 twistlock
+            if [[ ! "$(stat --format '%U' /pvc/var/lib/twistlock)" == "twistlock" ]]; then
+              echo "Scaling down console deployment to prepare for permissions changes..."
+              kubectl scale --replicas=0 deployment/twistlock-console -n twistlock
+              running_pods_count=1
+              while [[ $running_pods -gt 0 ]]; do
+                echo "Waiting for console pods to terminate..."
+                sleep 10
+                running_pods=$(kubectl get pod -l name="{{ template "twistlock-console.name" . }}" -n twistlock --output name)
+                running_pods_count=$(echo $running_pods | wc -l)
+                echo "Running pods: ${running_pods}"
+              done
+            else
+              echo "No permissions changes required."
+            fi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: console-persistent-volume
+          mountPath: "/pvc"
+      containers:
+      - name: pvc-permissions-change
+        image: {{ .Values.init.image.repository }}:{{ .Values.init.image.tag }}
+        imagePullPolicy: {{ .Values.init.image.imagePullPolicy }}
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          runAsGroup: 0
+        command:
+          - /bin/bash
+          - -c
+          - |
+            useradd -u 2674 twistlock
+            if [[ ! "$(stat --format '%U' /pvc/var/lib/twistlock)" == "twistlock" ]]; then
+              echo "Updating PVC permissions to twistlock user ownership..."
+              chown -R 2674:2674 /pvc/var/lib/twistlock /pvc/var/lib/twistlock-backup && export chown_success=0 || export chown_success=$?
+              if [[ ${chown_success} == 0 ]]; then
+                echo "Permissions update complete!"
+              else
+                echo "Permissions update failed."
+                exit 1
+              fi
+            else
+              echo "No permissions changes required."
+            fi
+            {{- if and .Values.bigbangPackage.istio.enabled (not .Values.bigbangPackage.istio.ambient.enabled) }}
+            until curl -fsI http://localhost:15021/healthz/ready; do
+              echo "Waiting for Istio sidecar proxy..."
+              sleep 3
+            done
+            sleep 5
+            echo "Stopping the istio proxy..."
+            curl -X POST http://localhost:15020/quitquitquit
+            {{- end }}
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: console-persistent-volume
+          mountPath: "/pvc"
+      volumes:
+      - name: console-persistent-volume
+        persistentVolumeClaim:
+          claimName: {{ template "twistlock-console.name" . }}
+{{- end }}

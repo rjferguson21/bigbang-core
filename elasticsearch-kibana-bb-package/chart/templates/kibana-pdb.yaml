@@ -1,0 +1,26 @@
+{{- if .Values.kibana.podDisruptionBudget.enabled }}
+{{- $pdbSpec := .Values.kibana.podDisruptionBudget.spec }}
+{{- if hasKey $pdbSpec "selector" }}
+  {{- fail "kibana.podDisruptionBudget.spec.selector is managed by the chart and cannot be set" }}
+{{- end }}
+{{- if and (hasKey $pdbSpec "minAvailable") (hasKey $pdbSpec "maxUnavailable") }}
+  {{- fail "kibana.podDisruptionBudget.spec: minAvailable and maxUnavailable are mutually exclusive" }}
+{{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-kb
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "elasticsearch.labels" . | nindent 4 }}
+spec:
+  {{- if or (hasKey $pdbSpec "minAvailable") (hasKey $pdbSpec "maxUnavailable") }}
+  {{- toYaml $pdbSpec | nindent 2 }}
+  {{- else }}
+  {{- $defaults := dict "maxUnavailable" 1 "unhealthyPodEvictionPolicy" "AlwaysAllow" }}
+  {{- toYaml (mergeOverwrite (deepCopy $defaults) $pdbSpec) | nindent 2 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      kibana.k8s.elastic.co/name: {{ .Release.Name }}
+{{- end }}

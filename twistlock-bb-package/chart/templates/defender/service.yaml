@@ -1,0 +1,14 @@
+{{- if .Values.deploymentMode.defenderOnly }}
+apiVersion: v1
+kind: Service 
+metadata:
+  name: {{ template "twistlock-defender.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "twistlock-defender.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: {{ .Values.defender.servicePort }}
+    targetPort: {{ .Values.defender.serviceTargetPort }}
+  selector:
+    app: twistlock-defender
+{{- end }}

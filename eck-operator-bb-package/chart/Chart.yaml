@@ -1,0 +1,33 @@
+apiVersion: v2
+name: eck-operator
+icon: https://helm.elastic.co/icons/eck.png
+description: Elastic Cloud on Kubernetes (ECK) operator. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+home: https://github.com/elastic/cloud-on-k8s
+type: application
+version: 3.3.1-bb.1
+appVersion: 3.3.1
+kubeVersion: ">=1.21.0-0"
+keywords:
+  - Logstash
+  - Elasticsearch
+  - Kibana
+  - APM Server
+  - Beats
+  - Enterprise Search
+  - Elastic Stack
+  - Operator
+dependencies:
+  - name: eck-operator
+    version: 3.3.1
+    repository: https://helm.elastic.co
+    alias: upstream
+annotations:
+  bigbang.dev/maintenanceTrack: bb_integrated
+  bigbang.dev/applicationVersions: |
+    - ECK Operator: 3.3.1
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    - [Find upstream chart's release notes and CHANGELOG here](https://github.com/elastic/cloud-on-k8s/releases)
+    - [Find upstream application's release notes and CHANGELOG here](https://www.elastic.co/guide/en/cloud-on-k8s/current/eck-release-notes.html)
+  helm.sh/images: |
+    - name: eck-operator
+      image: registry1.dso.mil/ironbank/elastic/eck-operator/eck-operator:3.3.1

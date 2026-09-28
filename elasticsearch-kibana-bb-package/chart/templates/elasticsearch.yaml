@@ -1,0 +1,657 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "elasticsearch.labels" $ | nindent 4 }}
+spec:
+  version: {{ .Values.elasticsearch.image.tag }}
+  image: {{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}
+  
+  {{- $secureSettings := list }}
+  {{- if .Values.sso.enabled }}
+  {{- $secureSettings = append $secureSettings (dict "secretName" "sso-secret") }}
+  {{- end }}
+  {{- $userSecureSettings := kindIs "slice" .Values.elasticsearch.secureSettings | ternary .Values.elasticsearch.secureSettings list }}
+  {{- $secureSettings = concat $secureSettings $userSecureSettings }}
+  {{- if $secureSettings }}
+  secureSettings:
+    {{- toYaml $secureSettings | nindent 4 }}
+  {{- end }}
+
+  {{- $anyNodeSetPDB := or
+    (dig "podDisruptionBudget" "enabled" false .Values.elasticsearch.master)
+    (dig "podDisruptionBudget" "enabled" false .Values.elasticsearch.data)
+    (and .Values.elasticsearch.ingest.enabled (dig "podDisruptionBudget" "enabled" false .Values.elasticsearch.ingest))
+    (and .Values.elasticsearch.ml.enabled (dig "podDisruptionBudget" "enabled" false .Values.elasticsearch.ml))
+    (and .Values.elasticsearch.coord.enabled (dig "podDisruptionBudget" "enabled" false .Values.elasticsearch.coord))
+  }}
+  {{- if and .Values.elasticsearch.clusterPodDisruptionBudget.enabled $anyNodeSetPDB }}
+    {{- fail "elasticsearch: clusterPodDisruptionBudget and per-nodeSet podDisruptionBudget are mutually exclusive. Set clusterPodDisruptionBudget.enabled: false when using per-nodeSet PDBs." }}
+  {{- end }}
+  {{- if not .Values.elasticsearch.clusterPodDisruptionBudget.enabled }}
+  podDisruptionBudget: {}
+  {{- else if .Values.elasticsearch.clusterPodDisruptionBudget.spec }}
+  podDisruptionBudget:
+    spec:
+      {{- include "elasticsearch.clusterPDBSpec" (list .Values.elasticsearch.clusterPodDisruptionBudget.spec .Release.Name "elasticsearch.clusterPodDisruptionBudget") | nindent 6 }}
+  {{- else }}
+  podDisruptionBudget:
+    metadata:
+      annotations:
+        bigbang.dev/eck-default-pdb: "true"
+  {{- end }}
+
+  nodeSets:
+
+  #
+  # Masters
+  #
+  {{- with .Values.elasticsearch.master }}
+  - name: master
+    count: {{ .count }}
+
+    config:
+      {{- $mergedConfig := dict -}}
+      {{- if $.Values.elasticsearch.common.config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy $.Values.elasticsearch.common.config) -}}
+      {{- end -}}
+      {{- if .config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy .config) -}}
+      {{- end -}}
+      {{- range $key, $val := $mergedConfig }}
+      {{- if kindIs "slice" $val }}
+      {{ $key }}: {{ $val | toJson }}
+      {{- else }}
+      {{ $key }}: {{ $val }}
+      {{- end }}
+      {{- end }}
+      {{- if $.Values.sso.enabled }}
+      {{ include "oidc" $ | indent 6 }}
+      {{- end }}
+    volumeClaimTemplates:
+      - metadata:
+          name: elasticsearch-data
+        spec:
+          resources:
+            requests:
+              storage: {{ .persistence.size }}
+          accessModes:
+            - ReadWriteOnce
+          {{- if .persistence.storageClassName }}
+          storageClassName: {{ .persistence.storageClassName }}
+          {{- end }}
+
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.istio.io/merge-metrics: "false"
+          traffic.sidecar.istio.io/includeInboundPorts: "*"
+          traffic.sidecar.istio.io/excludeInboundPorts: "9300"
+          traffic.sidecar.istio.io/excludeOutboundPorts: "9300"
+          {{- if $.Values.sso.enabled }}
+          sso-secret/checksum: {{ include (print $.Template.BasePath "/bigbang/sso-secret.yaml") $ | sha256sum }}
+          {{- end }}
+          values/checksum: {{ include "oidc" $ | sha256sum }}
+        {{- if .podAnnotations }}
+          {{- toYaml .podAnnotations | nindent 10 }}
+        {{- end }}
+        labels:
+          {{ include "elasticsearch.labels" $ |  nindent 10 }}
+
+      spec:
+        {{- if .securityContext }}
+        securityContext:
+        {{- toYaml .securityContext | nindent 10 }}
+        {{- end }}
+
+        {{- if .nodeSelector }}
+        nodeSelector:
+          {{- toYaml .nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .affinity }}
+        affinity:
+          {{- toYaml .affinity | nindent 10 }}
+        {{- end }}
+        {{- if .tolerations }}
+        tolerations:
+          {{- toYaml .tolerations | nindent 10 }}
+        {{- end }}
+
+        serviceAccountName: {{ $.Values.elasticsearch.serviceAccountName }}
+        
+        {{- if .updateStrategy }}
+        updateStrategy:
+          {{- toYaml .updateStrategy | nindent 10 }}
+        {{- end }}
+
+        {{- $commonInit := default list $.Values.elasticsearch.common.initContainers }}
+        {{- $nodeInit := default list .initContainers }}
+        {{- $allInitContainers := concat $commonInit $nodeInit }}
+        {{- if $allInitContainers }}
+        initContainers:
+        {{- toYaml $allInitContainers | nindent 10 }}
+        {{- end }}
+        containers:
+          - name: elasticsearch
+            env:
+              - name: ES_JAVA_OPTS
+                value: "-Xms{{ .heap.min }} -Xmx{{ .heap.max }}"
+            resources:
+              {{- toYaml .resources | nindent 14 }}
+            lifecycle:
+              {{- toYaml .lifecycle | nindent 14 }}
+            {{- $readinessProbe := default (default dict $.Values.elasticsearch.common.readinessProbe) .readinessProbe }}
+            {{- if $readinessProbe }}
+            readinessProbe:
+              {{- toYaml $readinessProbe | nindent 14 }}
+            {{- end }}
+            {{- if .volumeMounts }}
+            volumeMounts:
+            {{- toYaml .volumeMounts | nindent 12 }}
+            {{- end }}
+            imagePullPolicy: {{ $.Values.imagePullPolicy }}
+            securityContext:
+            {{- toYaml .containersecurityContext | nindent 14 }}
+        {{- if .volumes }}
+        volumes:
+        {{- toYaml .volumes | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.elasticsearch.imagePullSecrets }}
+        imagePullSecrets:
+        {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if $.Values.bigbangPackage.istio.enabled }}
+        automountServiceAccountToken: true
+      {{- end }}
+  {{- end }}
+
+  #
+  # Data Nodes
+  #
+  {{- with .Values.elasticsearch.data }}
+  - name: data
+    count: {{ .count }}
+
+    config:
+      {{- $mergedConfig := dict -}}
+      {{- if $.Values.elasticsearch.common.config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy $.Values.elasticsearch.common.config) -}}
+      {{- end -}}
+      {{- if .config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy .config) -}}
+      {{- end -}}
+      {{- range $key, $val := $mergedConfig }}
+      {{- if kindIs "slice" $val }}
+      {{ $key }}: {{ $val | toJson }}
+      {{- else }}
+      {{ $key }}: {{ $val }}
+      {{- end }}
+      {{- end }}
+      {{- if $.Values.sso.enabled }}
+      {{ include "oidc" $ | indent 6 }}
+      {{- end }}
+
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        resources:
+          requests:
+            storage: {{ .persistence.size }}
+        accessModes:
+        - ReadWriteOnce
+        {{- if .persistence.storageClassName }}
+        storageClassName: {{ .persistence.storageClassName }}
+        {{- end }}
+
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.istio.io/merge-metrics: "false"
+          traffic.sidecar.istio.io/includeInboundPorts: "*"
+          # 9300 is Elastic's transport port and Elastic handles the TLS encryption for it
+          # To prevent double encrypted traffic we exclude 9300 from  sidecar traffic and mTLS
+          traffic.sidecar.istio.io/excludeInboundPorts: "9300"
+          traffic.sidecar.istio.io/excludeOutboundPorts: "9300"
+          {{- if $.Values.sso.enabled }}
+          sso-secret/checksum: {{ include (print $.Template.BasePath "/bigbang/sso-secret.yaml") $ | sha256sum }}
+          {{- end }}
+          values/checksum: {{ include "oidc" $ | sha256sum }}
+        {{- if .podAnnotations }}
+          {{- toYaml .podAnnotations | nindent 10 }}
+        {{- end }}
+        labels:
+          {{ include "elasticsearch.labels" $ |  nindent 10 }}
+
+      spec:
+        {{- if .securityContext }}
+        securityContext:
+        {{- toYaml .securityContext | nindent 10 }}
+        {{- end }}
+
+        {{- if .nodeSelector }}
+        nodeSelector:
+          {{- toYaml .nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .affinity }}
+        affinity:
+          {{- toYaml .affinity | nindent 10 }}
+        {{- end }}
+        {{- if .tolerations }}
+        tolerations:
+          {{- toYaml .tolerations | nindent 10 }}
+        {{- end }}
+
+        serviceAccountName: {{ $.Values.elasticsearch.serviceAccountName }}
+
+        {{- if .updateStrategy }}
+        updateStrategy:
+          {{- toYaml .updateStrategy | nindent 10 }}
+        {{- end }}
+
+        {{- $commonInit := default list $.Values.elasticsearch.common.initContainers }}
+        {{- $nodeInit := default list .initContainers }}
+        {{- $allInitContainers := concat $commonInit $nodeInit }}
+        {{- if $allInitContainers }}
+        initContainers:
+        {{- toYaml $allInitContainers | nindent 10 }}
+        {{- end }}
+        containers:
+          - name: elasticsearch
+            env:
+              - name: ES_JAVA_OPTS
+                value: "-Xms{{ .heap.min }} -Xmx{{ .heap.max }}"
+            resources:
+              {{- toYaml .resources | nindent 14 }}
+            lifecycle:
+              {{- toYaml .lifecycle | nindent 14 }}
+            {{- $readinessProbe := default (default dict $.Values.elasticsearch.common.readinessProbe) .readinessProbe }}
+            {{- if $readinessProbe }}
+            readinessProbe:
+              {{- toYaml $readinessProbe | nindent 14 }}
+            {{- end }}
+            {{- if .volumeMounts }}
+            volumeMounts:
+            {{- toYaml .volumeMounts | nindent 12 }}
+            {{- end }}
+            imagePullPolicy: {{ $.Values.imagePullPolicy }}
+            securityContext:
+            {{- toYaml .containersecurityContext | nindent 14 }}
+        {{- if .volumes }}
+        volumes:
+        {{- toYaml .volumes | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.elasticsearch.imagePullSecrets }}
+        imagePullSecrets:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- if $.Values.bigbangPackage.istio.enabled }}
+        automountServiceAccountToken: true
+      {{- end }}
+  {{- end }}
+
+  #
+  # Ingest Nodes
+  #
+  {{- if .Values.elasticsearch.ingest.enabled }}
+  {{- with .Values.elasticsearch.ingest }}
+  - name: ingest
+    count: {{ .count }}
+
+    config:
+      {{- $mergedConfig := dict -}}
+      {{- if $.Values.elasticsearch.common.config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy $.Values.elasticsearch.common.config) -}}
+      {{- end -}}
+      {{- if .config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy .config) -}}
+      {{- end -}}
+      {{- range $key, $val := $mergedConfig }}
+      {{- if kindIs "slice" $val }}
+      {{ $key }}: {{ $val | toJson }}
+      {{- else }}
+      {{ $key }}: {{ $val }}
+      {{- end }}
+      {{- end }}
+      {{- if $.Values.sso.enabled }}
+      {{ include "oidc" $ | indent 6 }}
+      {{- end }}
+
+    # Removed due to errors
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        resources:
+          requests:
+            storage: {{ .persistence.size }}
+        accessModes:
+        - ReadWriteOnce
+        {{- if .persistence.storageClassName }}
+        storageClassName: {{ .persistence.storageClassName }}
+        {{- end }}
+
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.istio.io/merge-metrics: "false"
+          traffic.sidecar.istio.io/includeInboundPorts: "*"
+          traffic.sidecar.istio.io/excludeInboundPorts: "9300"
+          traffic.sidecar.istio.io/excludeOutboundPorts: "9300"
+          sso-secret/checksum: {{ include (print $.Template.BasePath "/bigbang/sso-secret.yaml") $ | sha256sum }}
+          values/checksum: {{ include "oidc" $ | sha256sum }}
+        {{- if .podAnnotations }}
+          {{- toYaml .podAnnotations | nindent 10 }}
+        {{- end }}
+        labels:
+          {{ include "elasticsearch.labels" $ |  nindent 10 }}
+
+      spec:
+        {{- if .securityContext }}
+        securityContext:
+        {{- toYaml .securityContext | nindent 10 }}
+        {{- end }}
+
+        {{- if .nodeSelector }}
+        nodeSelector:
+          {{- toYaml .nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .affinity }}
+        affinity:
+          {{- toYaml .affinity | nindent 10 }}
+        {{- end }}
+        {{- if .tolerations }}
+        tolerations:
+          {{- toYaml .tolerations | nindent 10 }}
+        {{- end }}
+
+        serviceAccountName: {{ $.Values.elasticsearch.serviceAccountName }}
+
+        {{- $commonInit := default list $.Values.elasticsearch.common.initContainers }}
+        {{- $nodeInit := default list .initContainers }}
+        {{- $allInitContainers := concat $commonInit $nodeInit }}
+        {{- if $allInitContainers }}
+        initContainers:
+        {{- toYaml $allInitContainers | nindent 10 }}
+        {{- end }}
+        containers:
+          - name: elasticsearch
+            env:
+              - name: ES_JAVA_OPTS
+                value: "-Xms{{ .heap.min }} -Xmx{{ .heap.max }}"
+            resources:
+              {{- toYaml .resources | nindent 14 }}
+            lifecycle:
+              {{- toYaml .lifecycle | nindent 14 }}
+            {{- $readinessProbe := default (default dict $.Values.elasticsearch.common.readinessProbe) .readinessProbe }}
+            {{- if $readinessProbe }}
+            readinessProbe:
+              {{- toYaml $readinessProbe | nindent 14 }}
+            {{- end }}
+            {{- if .volumeMounts }}
+            volumeMounts:
+            {{- toYaml .volumeMounts | nindent 12 }}
+            {{- end }}
+            imagePullPolicy: {{ $.Values.imagePullPolicy }}
+            securityContext:
+            {{- toYaml .containersecurityContext | nindent 14 }}
+        {{- if .volumes }}
+        volumes:
+        {{- toYaml .volumes | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.elasticsearch.imagePullSecrets }}
+        imagePullSecrets:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- if $.Values.bigbangPackage.istio.enabled }}
+        automountServiceAccountToken: true
+      {{- end }}
+  {{- end }}
+  {{- end }}
+
+  #
+  # ML Nodes
+  #
+  {{- if .Values.elasticsearch.ml.enabled }}
+  {{- with .Values.elasticsearch.ml }}
+  - name: ml
+    count: {{ .count }}
+
+    config:
+      {{- $mergedConfig := dict -}}
+      {{- if $.Values.elasticsearch.common.config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy $.Values.elasticsearch.common.config) -}}
+      {{- end -}}
+      {{- if .config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy .config) -}}
+      {{- end -}}
+      {{- range $key, $val := $mergedConfig }}
+      {{- if kindIs "slice" $val }}
+      {{ $key }}: {{ $val | toJson }}
+      {{- else }}
+      {{ $key }}: {{ $val }}
+      {{- end }}
+      {{- end }}
+      {{- if $.Values.sso.enabled }}
+      {{ include "oidc" $ | indent 6 }}
+      {{- end }}
+
+    # Removed due to errors
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        resources:
+          requests:
+            storage: {{ .persistence.size }}
+        accessModes:
+        - ReadWriteOnce
+        {{- if .persistence.storageClassName }}
+        storageClassName: {{ .persistence.storageClassName }}
+        {{- end }}
+
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.istio.io/merge-metrics: "false"
+          traffic.sidecar.istio.io/includeInboundPorts: "*"
+          traffic.sidecar.istio.io/excludeInboundPorts: "9300"
+          traffic.sidecar.istio.io/excludeOutboundPorts: "9300"
+          sso-secret/checksum: {{ include (print $.Template.BasePath "/bigbang/sso-secret.yaml") $ | sha256sum }}
+          values/checksum: {{ include "oidc" $ | sha256sum }}
+        {{- if .podAnnotations }}
+          {{- toYaml .podAnnotations | nindent 10 }}
+        {{- end }}
+        labels:
+          {{ include "elasticsearch.labels" $ |  nindent 10 }}
+
+      spec:
+        {{- if .securityContext }}
+        securityContext:
+        {{- toYaml .securityContext | nindent 10 }}
+        {{- end }}
+
+        {{- if .nodeSelector }}
+        nodeSelector:
+          {{- toYaml .nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .affinity }}
+        affinity:
+          {{- toYaml .affinity | nindent 10 }}
+        {{- end }}
+        {{- if .tolerations }}
+        tolerations:
+          {{- toYaml .tolerations | nindent 10 }}
+        {{- end }}
+        serviceAccountName: {{ $.Values.elasticsearch.serviceAccountName }}
+        {{- if .updateStrategy }}
+        updateStrategy:
+          {{- toYaml .updateStrategy | nindent 10 }}
+        {{- end }}
+
+        {{- $commonInit := default list $.Values.elasticsearch.common.initContainers }}
+        {{- $nodeInit := default list .initContainers }}
+        {{- $allInitContainers := concat $commonInit $nodeInit }}
+        {{- if $allInitContainers }}
+        initContainers:
+        {{- toYaml $allInitContainers | nindent 10 }}
+        {{- end }}
+        containers:
+          - name: elasticsearch
+            env:
+              - name: ES_JAVA_OPTS
+                value: "-Xms{{ .heap.min }} -Xmx{{ .heap.max }}"
+            resources:
+              {{- toYaml .resources | nindent 14 }}
+            lifecycle:
+              {{- toYaml .lifecycle | nindent 14 }}
+            {{- $readinessProbe := default (default dict $.Values.elasticsearch.common.readinessProbe) .readinessProbe }}
+            {{- if $readinessProbe }}
+            readinessProbe:
+              {{- toYaml $readinessProbe | nindent 14 }}
+            {{- end }}
+            {{- if .volumeMounts }}
+            volumeMounts:
+            {{- toYaml .volumeMounts | nindent 12 }}
+            {{- end }}
+            imagePullPolicy: {{ $.Values.imagePullPolicy }}
+            securityContext:
+            {{- toYaml .containersecurityContext | nindent 14 }}
+        {{- if .volumes }}
+        volumes:
+        {{- toYaml .volumes | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.elasticsearch.imagePullSecrets }}
+        imagePullSecrets:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- if $.Values.bigbangPackage.istio.enabled }}
+        automountServiceAccountToken: true
+      {{- end }}
+  {{- end }}
+  {{- end }}
+
+  #
+  # Coordinating Nodes
+  #
+  {{- if .Values.elasticsearch.coord.enabled }}
+  {{- with .Values.elasticsearch.coord }}
+  - name: coord
+    count: {{ .count }}
+
+    config:
+      {{- $mergedConfig := dict -}}
+      {{- if $.Values.elasticsearch.common.config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy $.Values.elasticsearch.common.config) -}}
+      {{- end -}}
+      {{- if .config -}}
+        {{- $mergedConfig = mergeOverwrite $mergedConfig (deepCopy .config) -}}
+      {{- end -}}
+      {{- range $key, $val := $mergedConfig }}
+      {{- if kindIs "slice" $val }}
+      {{ $key }}: {{ $val | toJson }}
+      {{- else }}
+      {{ $key }}: {{ $val }}
+      {{- end }}
+      {{- end }}
+      {{- if $.Values.sso.enabled }}
+      {{ include "oidc" $ | indent 6 }}
+      {{- end }}
+
+    # Removed due to errors
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        resources:
+          requests:
+            storage: {{ .persistence.size }}
+        accessModes:
+        - ReadWriteOnce
+        {{- if .persistence.storageClassName }}
+        storageClassName: {{ .persistence.storageClassName }}
+        {{- end }}
+
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.istio.io/merge-metrics: "false"
+          traffic.sidecar.istio.io/includeInboundPorts: "*"
+          traffic.sidecar.istio.io/excludeInboundPorts: "9300"
+          traffic.sidecar.istio.io/excludeOutboundPorts: "9300"
+          sso-secret/checksum: {{ include (print $.Template.BasePath "/bigbang/sso-secret.yaml") $ | sha256sum }}
+          values/checksum: {{ include "oidc" $ | sha256sum }}
+        {{- if .podAnnotations }}
+          {{- toYaml .podAnnotations | nindent 10 }}
+        {{- end }}
+        labels:
+          {{ include "elasticsearch.labels" $ |  nindent 10 }}
+
+      spec:
+        {{- if .securityContext }}
+        securityContext:
+        {{- toYaml .securityContext | nindent 10 }}
+        {{- end }}
+
+        {{- if .nodeSelector }}
+        nodeSelector:
+          {{- toYaml .nodeSelector | nindent 10 }}
+        {{- end }}
+        {{- if .affinity }}
+        affinity:
+          {{- toYaml .affinity | nindent 10 }}
+        {{- end }}
+        {{- if .tolerations }}
+        tolerations:
+          {{- toYaml .tolerations | nindent 10 }}
+        {{- end }}
+
+        serviceAccountName: {{ $.Values.elasticsearch.serviceAccountName }}
+        {{- if .updateStrategy }}
+        updateStrategy:
+          {{- toYaml .updateStrategy | nindent 10 }}
+        {{- end }}
+        
+
+        {{- $commonInit := default list $.Values.elasticsearch.common.initContainers }}
+        {{- $nodeInit := default list .initContainers }}
+        {{- $allInitContainers := concat $commonInit $nodeInit }}
+        {{- if $allInitContainers }}
+        initContainers:
+        {{- toYaml $allInitContainers | nindent 10 }}
+        {{- end }}
+        containers:
+          - name: elasticsearch
+            env:
+              - name: ES_JAVA_OPTS
+                value: "-Xms{{ .heap.min }} -Xmx{{ .heap.max }}"
+            resources:
+              {{- toYaml .resources | nindent 14 }}
+            lifecycle:
+              {{- toYaml .lifecycle | nindent 14 }}
+            {{- $readinessProbe := default (default dict $.Values.elasticsearch.common.readinessProbe) .readinessProbe }}
+            {{- if $readinessProbe }}
+            readinessProbe:
+              {{- toYaml $readinessProbe | nindent 14 }}
+            {{- end }}
+            {{- if .volumeMounts }}
+            volumeMounts:
+            {{- toYaml .volumeMounts | nindent 12 }}
+            {{- end }}
+            imagePullPolicy: {{ $.Values.imagePullPolicy }}
+            securityContext:
+            {{- toYaml .containersecurityContext | nindent 14 }}
+        {{- if .volumes }}
+        volumes:
+        {{- toYaml .volumes | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.elasticsearch.imagePullSecrets }}
+        imagePullSecrets:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- if $.Values.bigbangPackage.istio.enabled }}
+        automountServiceAccountToken: true
+      {{- end }}
+  {{- end }}
+  {{- end }}

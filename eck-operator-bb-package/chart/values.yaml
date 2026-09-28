@@ -1,0 +1,145 @@
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+
+  istio:
+    enabled: false
+
+    # Mutual TLS configuration; also consumed by the webhook PeerAuthentication exception template
+    mtls:
+      mode: STRICT  # STRICT, PERMISSIVE, or DISABLE
+
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+
+  networkPolicies:
+    enabled: false
+    egress:
+      definitions:
+        elasticsearch:
+          to:
+            - namespaceSelector: {}
+              podSelector:
+                matchLabels:
+                  common.k8s.elastic.co/type: elasticsearch
+          ports:
+            - port: 9200
+              protocol: TCP
+        kibana:
+          to:
+            - namespaceSelector: {}
+              podSelector:
+                matchLabels:
+                  common.k8s.elastic.co/type: kibana
+          ports:
+            - port: 5601
+              protocol: TCP
+      from:
+        elastic-operator:
+          to:
+            definition:
+              kubeAPI: true
+              elasticsearch: true
+              kibana: true
+            k8s:
+              tempo/tempo:9411: true
+    ingress:
+      to:
+        elastic-operator:8080:
+          from:
+            k8s:
+              monitoring/prometheus: true
+
+# BigBang Service Monitor
+serviceMonitor:
+  enabled: false
+  # -- Additional labels for the service monitor
+  additionalLabels: {}
+  # -- Scrape interval. If not set, the Prometheus default scrape interval is used.
+  interval: "30s"
+  # -- MetricRelabelConfigs to apply to samples after scraping, but before ingestion.
+  # ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#relabelconfig
+  metricRelabelings: []
+  # - action: keep
+  #   regex: 'kube_(daemonset|deployment|pod|namespace|node|statefulset).+'
+  #   sourceLabels: [__name__]
+  # -- Customize tls parameters for the service monitor
+  scheme: "https"
+  tlsConfig: {}
+  # -- RelabelConfigs to apply to samples before scraping
+  # ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#relabelconfig
+  relabelings: []
+  # - sourceLabels: [__meta_kubernetes_pod_node_name]
+  #   separator: ;
+  #   regex: ^(.*)$
+  #   targetLabel: nodename
+  #   replacement: $1
+  #   action: replace
+  # -- Enable HTTP/2 for the service monitor scraping endpoint. Default is false for compatibility.
+  enableHttp2: false
+
+# Openshift toggle, conditionally modifies networkpolicy for DNS
+openshift: false
+
+# Enterprise license
+license:
+  trial: false # Toggle to enable the trial license for development use
+  keyJSON: "" # Set this to your license JSON for production use
+
+# Force replace CRD upgrade job needed for 1.7.x upgrade
+upgradeCrds:
+  enabled: false
+  image:
+    repository: registry1.dso.mil/ironbank/big-bang/base
+    tag: 2.1.0
+
+# Ref https://github.com/elastic/cloud-on-k8s/blob/main/deploy/eck-operator/values.yaml
+upstream:
+  imagePullSecrets:
+  - name: private-registry
+
+  image:
+    repository: registry1.dso.mil/ironbank/elastic/eck-operator/eck-operator
+    tag: 3.3.1
+    pullPolicy: IfNotPresent
+    # fips specifies whether the operator will use a FIPS compliant container image for its own StatefulSet image.
+    # This setting does not apply to Elastic Stack applications images.
+    # Can be combined with config.ubiOnly.
+    fips: false
+
+  # resources define the container resource limits for the operator.
+  resources: # Limits equal to request to provide QOS per BB Charter
+    limits:
+      cpu: 200m # Values pulled from PB IL2 cluster
+      memory: 256Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  # podSecurityContext defines the pod security context for the operator pod.
+  podSecurityContext:
+    runAsNonRoot: true
+    fsGroup: 1001
+    supplementalGroups: [1001]
+
+  # securityContext defines the security context of the operator container.
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+
+  config:
+    metrics:
+      # port defines the port to expose operator metrics. Set to 0 to disable metrics reporting.
+      port: "8080"

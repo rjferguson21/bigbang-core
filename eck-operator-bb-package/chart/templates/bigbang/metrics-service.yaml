@@ -1,0 +1,22 @@
+{{- if .Values.serviceMonitor.enabled  }}
+{{- $metricsPort := int (include "eck-operator.metrics.port" .Subcharts.upstream)}}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: {{ include "eck-operator.name" .Subcharts.upstream }}-metrics-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    helm.sh/chart: {{ include "eck-operator.chart" .Subcharts.upstream }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  name: "{{ include "eck-operator.fullname" .Subcharts.upstream }}-metrics"
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - name: metrics
+    port: {{ $metricsPort }}
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    {{- include "eck-operator.selectorLabels" .Subcharts.upstream | nindent 4 }}
+{{- end }}

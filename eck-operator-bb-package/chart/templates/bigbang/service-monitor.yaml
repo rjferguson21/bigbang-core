@@ -1,0 +1,40 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "eck-operator.fullname" .Subcharts.upstream }}
+  namespace: {{ ternary .Values.serviceMonitor.namespace .Release.Namespace (not (and (.Values.serviceMonitor) (empty .Values.serviceMonitor.namespace))) }}
+  labels:
+    {{- include "eck-operator.labels" .Subcharts.upstream | nindent 4 }}
+    {{- with .Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "eck-operator.name" .Subcharts.upstream }}-metrics-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+  - port: metrics
+    path: /metrics
+    enableHttp2: {{ .Values.serviceMonitor.enableHttp2 }}
+    scheme: {{ .Values.serviceMonitor.scheme }}
+    {{- if .Values.serviceMonitor.interval }}
+    interval: {{ .Values.serviceMonitor.interval }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.metricRelabelings }}
+    metricRelabelings:
+    {{ tpl (toYaml .Values.serviceMonitor.metricRelabelings | nindent 6) . }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.relabelings }}
+    relabelings:
+    {{ tpl (toYaml .Values.serviceMonitor.relabelings | nindent 6) . }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.tlsConfig }}
+    tlsConfig:
+    {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

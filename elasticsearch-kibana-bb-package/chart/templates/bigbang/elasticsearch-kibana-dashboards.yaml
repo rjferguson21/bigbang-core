@@ -1,0 +1,12 @@
+{{- if and .Values.monitoring.enabled .Values.metrics.enabled .Values.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastisearch-kibana-grafana-dashboards
+  namespace: {{ .Values.dashboards.namespace }}
+  labels:
+{{ toYaml .Values.dashboards.labels | indent 4 }}
+data:
+  grafana-elastisearch-kibana-general.json: |
+    {{ .Files.Get "dashboards/grafana-elastisearch-kibana-general.json" | nindent 4 }}
+{{- end }}

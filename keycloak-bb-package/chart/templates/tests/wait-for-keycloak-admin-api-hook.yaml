@@ -1,0 +1,96 @@
+{{- if .Values.bbtests }}
+{{- if .Values.bbtests.enabled }}
+{{- $upstreamContext := dict "Values" .Values.upstream "Release" .Release "Chart" (dict "Name" "keycloakx") -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "keycloak.fullname" . }}-wait-for-admin-api-hook
+  labels:
+    app: {{ template "keycloak.name" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
+    helm-test: enabled
+  annotations:
+    # This hook is intentionally separate from Cypress user creation. CI upgrade
+    # jobs can hit a Postgres/Keycloak recovery race where Keycloak answers
+    # basic HTTP before the admin token path is usable, and Cypress then sees
+    # transient 500s. Keep the readiness wait explicit instead of hiding it in
+    # the user-creation hook.
+    "helm.sh/hook": post-install,post-upgrade
+    # Negative weights run before the default weight 0 user-creation hook.
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      name: {{ template "keycloak.fullname" . }}-wait-for-admin-api-hook
+      labels:
+        app: {{ template "keycloak.name" . }}
+        heritage: {{ .Release.Service }}
+        release: {{ .Release.Name }}
+      annotations:
+        proxy.istio.io/config: |
+          proxyMetadata:
+            ISTIO_META_DNS_CAPTURE: "true"
+    spec:
+      {{- with .Values.upstream.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      containers:
+      - name: {{ template "keycloak.fullname" . }}-wait-for-admin-api
+        image: {{ .Values.bbtests.image }}
+        imagePullPolicy: {{ .Values.bbtests.imagePullPolicy }}
+        securityContext:
+          {{- toYaml .Values.upstream.securityContext | nindent 12 }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          default_admin_user="{{ default "admin" .Values.upstream.secrets.env.stringData.KEYCLOAK_ADMIN }}"
+          default_admin_password="{{ default "password" .Values.upstream.secrets.env.stringData.KEYCLOAK_ADMIN_PASSWORD }}"
+          base_url="http://{{ include "keycloak.fullname" $upstreamContext }}-http.{{ .Release.Namespace }}.svc.cluster.local:{{ dig "service" "httpPort" 80 .Values.upstream }}"
+          # A credentialed token request proves more than HTTP liveness: the master realm,
+          # admin user, credentials, and database-backed token flow are usable before lower-priority Helm hooks are unblocked.
+          token_url="$base_url/auth/realms/master/protocol/openid-connect/token"
+          counter=0
+          max_retries=60
+          retry_delay_seconds=5
+
+          echo "Waiting for Keycloak admin token endpoint: $token_url"
+
+          until [ "$counter" -ge "$max_retries" ]; do
+            counter=$((counter + 1))
+
+            token_req=$(curl -vvvv --write-out " %{http_code}" -s -k --request POST \
+              -d "client_id=admin-cli" \
+              -d "username=$default_admin_user" \
+              -d "password=$default_admin_password" \
+              -d "grant_type=password" \
+              "$token_url" || true)
+
+            token_req_status=${token_req##* }
+
+            if [ "$token_req_status" = "200" ]; then
+              echo "Keycloak admin token endpoint is ready."
+              exit 0
+            fi
+
+            echo "Retry $counter/$max_retries: admin token endpoint status=$token_req_status"
+            sleep "$retry_delay_seconds"
+          done
+
+          echo -e "Keycloak admin token endpoint did not become ready after $max_retries attempts: \n\t${token_req% *}"
+          exit 1
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+            cpu: 100m
+{{- end }}
+{{- end }}

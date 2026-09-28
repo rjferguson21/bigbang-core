@@ -1,0 +1,124 @@
+{{- if .Values.deploymentMode.defenderOnly }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ template "twistlock-defender.name" . }}-ds
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: twistlock-defender
+  template:
+    metadata:
+      labels: {{- include "twistlock-defender.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "twistlock-defender.name" . }}-service
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecretName }}
+      restartPolicy: Always
+      containers:
+      - name: {{ template "twistlock-defender.name" . }}
+        image: {{ .Values.defender.image.repository }}:{{ .Values.defender.image.tag }}
+        volumeMounts:
+        - name: data-folder
+          mountPath: "/var/lib/twistlock"
+        - name: certificates # Setting the certificates mount after data-folder since it is nested and was overridden in CRI based GKE cluster
+          mountPath: "/var/lib/twistlock/certificates"
+        - name: docker-sock-folder
+          mountPath: "/var/run"
+        - name: passwd
+          mountPath: "/etc/passwd"
+          readOnly: true
+        - name: syslog-socket
+          mountPath: "/dev/log"
+        - name: cri-data
+          mountPath: /var/lib/containerd
+        - name: cri-rke2-data
+          mountPath: /var/lib/rancher/rke2/agent/containerd
+        - name: runc-proxy-sock-folder
+          mountPath: "/run"
+        {{- if not .Values.defender.serviceAccount.automountServiceAccountToken }}
+        {{- include "twistlock.saTokenVolumeMount" . | nindent 8 }}
+        {{- end }}
+        env:
+        - name: WS_ADDRESS
+          value: {{ required "defender.ws_address must be defined in values.yaml." .Values.defender.ws_address }}
+        - name: DEFENDER_TYPE
+          value: cri
+        - name: LOG_PROD
+          value: "true"
+        - name: SYSTEMD_ENABLED
+          value: {{ .Values.systemd.enabled | quote }}
+        - name: DOCKER_CLIENT_ADDRESS
+          value: "/var/run/docker.sock"
+        - name: DEFENDER_CLUSTER_ID
+          valueFrom:
+            configMapKeyRef:
+                name: {{ template "twistlock-defender.name" . }}-cluster-id
+                key: DEFENDER_CLUSTER_ID
+        - name: DEFENDER_CLUSTER_NAME_RESOLVING_METHOD
+          value: "manual"
+        - name: DEFENDER_CLUSTER
+          value: {{ required "defender.clusterName must be defined in values.yaml." .Values.defender.clusterName }}
+        - name: MONITOR_SERVICE_ACCOUNTS
+          value: {{ .Values.defender.monitorServiceAccounts | quote }}
+        - name: MONITOR_ISTIO
+          value: {{ .Values.defender.monitorIstio | quote }}
+        - name: COLLECT_POD_LABELS
+          value: {{ .Values.defender.collect_pod_labels | quote }}
+        - name: HOST_CUSTOM_COMPLIANCE_ENABLED
+          value: "false"
+        - name: CLOUD_HOSTNAME_ENABLED
+          value: "false"
+        securityContext:
+          readOnlyRootFilesystem: {{ .Values.defender.readOnlyRootFilesystem }}
+          privileged: {{ .Values.defender.privileged }}
+          appArmorProfile:
+            type: Unconfined
+          seLinuxOptions:
+            type: spc_t
+          capabilities:
+            add:
+            {{- toYaml .Values.defender.securityCapabilitiesAdd | nindent 14 }}
+        resources:
+          limits:
+            memory: {{ .Values.defender.resources.limits.memory }}
+            cpu: {{ .Values.defender.resources.limits.cpu }}
+          requests:
+            memory: {{ .Values.defender.resources.requests.memory }}
+            cpu: {{ .Values.defender.resources.requests.cpu }}
+      volumes:
+      - name: certificates
+        secret:
+          secretName: {{ template "twistlock.name" . }}-secrets
+          defaultMode: 256
+      - name: syslog-socket
+        hostPath:
+          path: "/dev/log"
+      - name: data-folder
+        hostPath:
+          path: "/var/lib/twistlock"
+      - name: passwd
+        hostPath:
+          path: "/etc/passwd"
+      - name: docker-sock-folder
+        hostPath:
+          path: "/var/run"
+      - name: cri-data
+        hostPath:
+          path: /var/lib/containerd
+      - name: cri-rke2-data
+        hostPath:
+          path: /var/lib/rancher/rke2/agent/containerd
+      - name: runc-proxy-sock-folder
+        hostPath:
+          path: "/run"
+      {{- if not .Values.defender.serviceAccount.automountServiceAccountToken }}
+      {{- include "twistlock.saTokenVolume" . | nindent 6 }}
+      {{- end }}
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        {{- toYaml .Values.defender.tolerations | nindent 8 }}
+{{- end }}

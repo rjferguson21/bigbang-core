@@ -1,0 +1,165 @@
+# -- This value will be removed in a later release as Tempo no longer has a UI
+domain: dev.bigbang.mil
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+  istio:
+    enabled: false
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+  routes:
+    inbound:
+      tempo-query:
+        enabled: false
+        gateways:
+          - istio-gateway/public-ingressgateway
+        hosts:
+          - tempo.{{ .Values.domain }}
+        service: tempo-tempo
+        port: 3200
+  networkPolicies:
+    enabled: false
+    # -- Use `kubectl cluster-info` and then resolve to IP for kube-api.
+    # Review value description in BigBang README.md
+    controlPlaneCidr: 0.0.0.0/0
+    ingress:
+      to:
+        tempo:3200:
+          from:
+            k8s:
+              public-ingressgateway-ingressgateway-service-account@istio-gateway/public-ingressgateway: true
+              kiali-service-account@kiali/kiali: true
+              monitoring-grafana@monitoring/grafana: true
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+        tempo:4317:
+          from:
+            k8s:
+              alloy-alloy-operator@alloy/alloy: true
+              alloy-alloy-logs@alloy/alloy-logs: true
+        tempo:9411:
+          from:
+            k8s:
+              "*/*": true
+    egress:
+      from:
+        tempo:
+          to:
+            k8s:
+              monitoring/prometheus:9090: true
+# -- Toggle monitoring integration. Intended to be controlled via BigBang passthrough of monitoring package status
+monitoring:
+  enabled: false
+# -- This value will be removed in a later release as Tempo no longer has a UI
+sso:
+  enabled: false
+upgradeJob:
+  # -- Enable BigBang specific autoRollingUpgrade support
+  enabled: true
+  name: tempo-upgrade-job
+  image:
+    repository: registry1.dso.mil/ironbank/opensource/kubernetes/kubectl
+    tag: v1.34.4
+    imagePullPolicy: Always
+    pullSecrets: private-registry
+  hook:
+    phase: pre-upgrade # or post-upgrade, pre-install, post-install
+    deletePolicy: hook-succeeded,before-hook-creation
+  serviceAccount: upgrade-job-svc-account
+  role: upgrade-role
+  roleBinding: upgrade-rolebinding
+bbtests:
+  enabled: false
+  scripts:
+    enabled: true
+    image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+    envs:
+      TEMPO_METRICS_URL: 'http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc:3200'
+# -- Toggle or openshift specific config
+openshift: false
+# -- Values to pass to [the upstream tempo chart](https://github.com/grafana/helm-charts/tree/main/charts/tempo/values.yaml)
+# @default -- Upstream chart values
+upstream:
+  # -- Overrides the chart's computed fullname
+  fullnameOverride: "tempo-tempo"
+  # -- Overrides the chart's computed name
+  nameOverride: "tempo"
+  # --- Add writable runtime volume ---
+  extraVolumes:
+    - name: tempo-runtime
+      emptyDir: {} # ephemeral, backed by node disk or memory
+  tempo:
+    # -- Docker image registry
+    registry: registry1.dso.mil
+    # -- Docker image repository
+    repository: ironbank/opensource/grafana/tempo
+    # -- Docker image tag
+    tag: 2.10.1
+    # -- Docker image pull policy
+    pullPolicy: Always
+    extraVolumeMounts:
+      - name: tempo-runtime
+        mountPath: /var/tempo
+    resources:
+      requests:
+        cpu: 500m
+        memory: 4Gi
+    reportingEnabled: false
+    ingester:
+      trace_idle_period: 10s
+      max_block_bytes: 1_000_000
+      max_block_duration: 5m
+    retention: 336h # 2 weeks retention
+    server:
+      # -- HTTP server listen port
+      http_listen_port: 3200
+    # Readiness and Liveness Probe Configuration Options
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: 3200
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 3200
+    receivers:
+      zipkin:
+        endpoint: 0.0.0.0:9411
+    securityContext:
+      capabilities:
+        drop:
+          - ALL
+  tempoQuery:
+    # -- Docker image repository
+    repository: registry1.dso.mil/ironbank/opensource/grafana/tempo-query
+    # -- Docker image tag
+    tag: 2.10.1
+    # -- Docker image pull policy
+    pullPolicy: Always
+    resources:
+      requests:
+        cpu: 300m
+        memory: 256Mi
+    securityContext:
+      capabilities:
+        drop:
+          - ALL
+  # -- securityContext for container
+  securityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    runAsNonRoot: true
+  serviceAccount:
+    # -- Image pull secrets for the service account
+    imagePullSecrets:
+      - name: private-registry
+    automountServiceAccountToken: false
+  # -- Pod Annotations
+  podAnnotations:
+    traffic.sidecar.istio.io/excludeInboundPorts: "9411"

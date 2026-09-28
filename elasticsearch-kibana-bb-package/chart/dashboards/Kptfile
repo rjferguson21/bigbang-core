@@ -1,0 +1,11 @@
+apiVersion: kpt.dev/v1alpha1
+kind: Kptfile
+metadata:
+  name: dashboards
+upstream:
+  type: git
+  git:
+    commit: 2c39d17c5a1222e7568f24ff03f196090689759f
+    repo: https://github.com/prometheus-community/elasticsearch_exporter
+    directory: /examples/grafana
+    ref: master

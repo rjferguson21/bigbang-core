@@ -1,0 +1,335 @@
+domain: dev.bigbang.mil
+# Default to false, override in openshift-test-values.yaml
+openshift: false
+experimentalMode:
+  # -- Toggle enabling of configurations and deployment modes currently unsupported by Big Bang
+  enabled: false
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+  istio:
+    enabled: false
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+  routes:
+    inbound:
+      loki:
+        # -- VirtualService for external access to Loki. Disabled by default as Loki
+        # is a backend service. Enable explicitly if external access is required.
+        enabled: false
+        gateways:
+          - istio-gateway/public-ingressgateway
+        hosts:
+          - loki.{{ .Values.domain }}
+        service: logging-loki-gateway.logging.svc.cluster.local
+        port: 80
+        containerPort: 8080
+        selector:
+          app.kubernetes.io/name: logging-loki
+  networkPolicies:
+    enabled: false
+    prependReleaseName: true
+    ingress:
+      to:
+        loki:8080:
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: logging-loki
+              app.kubernetes.io/component: gateway
+          from:
+            k8s:
+              monitoring-grafana@monitoring/grafana: true
+        logging-loki:3100:
+          from:
+            k8s:
+              alloy-alloy-operator@alloy/alloy: true
+              alloy-alloy-logs@alloy/alloy-logs: true
+              fluentbit-fluent-bit@fluentbit/fluent-bit: true
+              monitoring-grafana@monitoring/grafana: true
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+    egress:
+      from:
+        logging-loki:
+          to:
+            k8s:
+              tempo/tempo:9411: true
+monitoring:
+  # -- If enabled, create configmaps with Big Bang dashboards for monitoring Loki
+  enabled: false
+bbtests:
+  enabled: false
+  scripts:
+    image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+    envs:
+      LOKI_URL: 'http://{{ .Values.upstream.fullnameOverride }}.{{ .Release.Namespace }}.svc:3100'
+      LOKI_VERSION: '{{ .Values.upstream.loki.image.tag }}'
+# -- Values to pass to [the upstream Loki chart](https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml)
+# @default -- Upstream chart values plus the Big Bang overrides below
+upstream:
+  nameOverride: logging-loki
+  fullnameOverride: logging-loki
+  imagePullSecrets:
+    - name: private-registry
+  deploymentMode: SingleBinary
+  loki:
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/opensource/grafana/loki
+      tag: 3.7.1
+    auth_enabled: false
+    limits_config:
+      discover_service_name: []
+      deletion_mode: filter-and-delete
+    commonConfig:
+      replication_factor: 1
+    storage:
+      # Big Bang deployments normally point this at an S3-compatible backend
+      # (e.g. minio); filesystem keeps the default single-binary install
+      # self-contained since this chart no longer bundles minio-instance.
+      type: filesystem
+      bucketNames:
+        chunks: loki
+        ruler: loki
+        admin: loki-admin
+        deletion: loki-deletion
+    schemaConfig:
+      configs:
+        - from: 2022-01-11
+          store: boltdb-shipper
+          object_store: '{{ .Values.loki.storage.type }}'
+          schema: v12
+          index:
+            prefix: loki_index_
+            period: 24h
+        - from: 2023-08-01
+          store: tsdb
+          object_store: '{{ .Values.loki.storage.type }}'
+          schema: v12
+          index:
+            prefix: loki_tsdb_
+            period: 24h
+        - from: 2024-05-30
+          store: tsdb
+          object_store: '{{ .Values.loki.storage.type }}'
+          schema: v13
+          index:
+            prefix: loki_tsdb_
+            period: 24h
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /var/loki/boltdb-shipper-active
+        cache_location: /var/loki/boltdb-shipper-cache
+        cache_ttl: 24h
+      tsdb_shipper:
+        active_index_directory: /var/loki/tsdb-index
+        cache_location: /var/loki/tsdb-cache
+        cache_ttl: 24h
+    compactor:
+      retention_enabled: true
+      delete_request_store: '{{ .Values.loki.storage.type }}'
+      compaction_interval: 10m
+      retention_delete_delay: 2h
+    analytics:
+      reporting_enabled: false
+    ingester:
+      chunk_target_size: 196608
+      flush_check_period: 5s
+      flush_op_timeout: 100m
+      autoforget_unhealthy: true
+      lifecycler:
+        ring:
+          kvstore:
+            store: memberlist
+          replication_factor: 1
+  enterprise:
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/grafana/grafana-enterprise-logs
+      tag: v3.6.5
+    tokengen:
+      enabled: true
+      targetModule: tokengen
+      adminTokenSecret: null
+      extraArgs: []
+      rbac:
+        create: true
+      env: []
+      labels: {}
+      annotations:
+        sidecar.istio.io/inject: 'false'
+      affinity: {}
+      nodeSelector: {}
+      tolerations: []
+      extraVolumes: []
+      extraVolumeMounts: []
+      securityContext:
+        runAsNonRoot: true
+        runAsGroup: 10001
+        runAsUser: 10001
+        fsGroup: 10001
+      extraEnvFrom: []
+      priorityClassName: ''
+    provisioner:
+      enabled: false
+      image:
+        registry: registry1.dso.mil
+        repository: ironbank/ironbank/opensource/grafana/enterprise-logs-provisioner
+        tag: 3.6.5
+  kubectlImage:
+    registry: registry1.dso.mil
+    repository: ironbank/opensource/kubernetes/kubectl
+    tag: v1.34.6
+    digest: null
+    pullPolicy: IfNotPresent
+  test:
+    enabled: false
+    prometheusAddress: http://prometheus:9090
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/bigbang/grafana/loki-helm-test
+      tag: 0.0.1
+  lokiCanary:
+    enabled: false
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/bigbang/grafana/loki-canary
+      tag: 3.7.1
+  serviceAccount:
+    automountServiceAccountToken: false
+  gateway:
+    enabled: false
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/opensource/nginx/nginx
+      tag: 1.30.0
+    nginxConfig:
+      file: |
+        {{- include "loki.nginxFile" . | indent 2 -}}
+    podDisruptionBudget:
+      minAvailable: ''
+      maxUnavailable: '1'
+  singleBinary:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    persistence:
+      enableStatefulSetAutoDeletePVC: false
+      size: 12Gi
+  write:
+    replicas: 0
+    resources:
+      limits:
+        cpu: 300m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 2Gi
+    podDisruptionBudget:
+      minAvailable: ''
+      maxUnavailable: '1'
+  read:
+    replicas: 0
+    resources:
+      limits:
+        cpu: 300m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 2Gi
+    podDisruptionBudget:
+      minAvailable: ''
+      maxUnavailable: '1'
+  backend:
+    replicas: 0
+    podDisruptionBudget:
+      minAvailable: ''
+      maxUnavailable: '1'
+  querier:
+    resources:
+      limits:
+        cpu: 300m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 2Gi
+    persistence:
+      enabled: false
+      size: 10Gi
+      storageClass: null
+      annotations: {}
+  compactor:
+    resources:
+      limits:
+        cpu: 300m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 2Gi
+    persistence:
+      size: 10Gi
+      storageClass: null
+    serviceAccount:
+      automountServiceAccountToken: false
+  bloomPlanner:
+    serviceAccount:
+      automountServiceAccountToken: false
+  patternIngester:
+    resources:
+      limits:
+        cpu: 100m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    serviceAccount:
+      automountServiceAccountToken: false
+  memcached:
+    image:
+      repository: registry1.dso.mil/ironbank/opensource/memcached/memcached
+      tag: 1.6.41
+    containerSecurityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+  memcachedExporter:
+    enabled: false
+    image:
+      repository: registry1.dso.mil/ironbank/opensource/prometheus/memcached-exporter
+      tag: v0.15.3
+    containerSecurityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+  resultsCache:
+    enabled: false
+  chunksCache:
+    enabled: false
+  sidecar:
+    image:
+      registry: registry1.dso.mil
+      repository: ironbank/kiwigrid/k8s-sidecar
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 100m
+        memory: 100Mi
+    securityContext:
+      seccompProfile:
+        type: RuntimeDefault
+    rules:
+      enabled: false

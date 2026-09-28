@@ -1,0 +1,20 @@
+{{ if and .Values.bigbangPackage.istio.enabled (eq .Values.bigbangPackage.istio.mtls.mode "STRICT") }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: ispn-ha-exception
+  namespace: {{ .Release.Namespace }}
+spec:
+  mtls:
+    mode: {{ .Values.bigbangPackage.istio.mtls.mode }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ .Values.upstream.nameOverride }}
+  portLevelMtls:
+    # Reference: https://www.keycloak.org/server/caching#_running_inside_a_service_mesh
+    # timing of mTLS prevents high-availability infinispan distributed cache from forming
+    # jgroups needs to communicate between pods on port 7800
+    "7800":
+      mode: PERMISSIVE
+{{- end }}

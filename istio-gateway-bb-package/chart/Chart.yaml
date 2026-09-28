@@ -1,0 +1,31 @@
+apiVersion: v2
+name: gateway
+version: 1.30.4-bb.1
+appVersion: 1.30.4
+description: Helm chart for deploying Istio gateways. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+icon: https://istio.io/latest/favicons/android-192x192.png
+keywords:
+- istio
+- istiod
+- gateways
+sources:
+- https://github.com/istio/istio
+dependencies:
+  - name: gluon
+    version: 1.1.6
+    repository: "oci://registry1.dso.mil/bigbang"
+  - name: gateway
+    repository: https://blob.istio.io/istio-release/charts
+    version: 1.30.4
+    alias: upstream
+annotations:
+  bigbang.dev/passthrough: "true"
+  bigbang.dev/passthrough-toplevel-key: upstream
+  bigbang.dev/maintenanceTrack: bb_integrated
+  helm.sh/images: |
+    - name: proxyv2
+      image: registry1.dso.mil/ironbank/opensource/istio/proxyv2:1.30.4
+    - name: kubectl
+      image: registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.35
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    - [Find upstream chart's release notes and CHANGELOG here](https://istio.io/latest/news/releases)

@@ -1,0 +1,27 @@
+---
+{{- if .Values.license.keyJSON }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: elastic-license
+  namespace: {{ .Release.Namespace }}
+  labels:
+    license.k8s.elastic.co/scope: operator
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+type: Opaque
+data:
+  license: {{ .Values.license.keyJSON | b64enc }}
+---
+{{- else if .Values.license.trial }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: elastic-trial-license
+  namespace: {{ .Release.Namespace }}
+  labels:
+    license.k8s.elastic.co/type: enterprise_trial
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    elastic.co/eula: accepted
+{{- end }}

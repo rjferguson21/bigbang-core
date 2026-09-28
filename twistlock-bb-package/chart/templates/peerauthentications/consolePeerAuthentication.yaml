@@ -1,0 +1,17 @@
+{{- if and .Values.bigbangPackage.istio.enabled (eq .Values.bigbangPackage.istio.mtls.mode "STRICT") (not .Values.deploymentMode.defenderOnly) }}
+apiVersion: "security.istio.io/v1beta1"
+kind: PeerAuthentication
+metadata:
+  name: twistlock-console-exception
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "twistlock-console.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: {{ .Values.bigbangPackage.istio.mtls.mode }}
+  selector:
+    matchLabels:
+      {{- include "twistlock-console.selector" . | nindent 8 }}
+  portLevelMtls:
+    "{{ .Values.console.ports.communication }}":
+      mode: PERMISSIVE
+{{- end }}

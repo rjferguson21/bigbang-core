@@ -1,0 +1,196 @@
+# -- The base domain for all Big Bang components.
+# Keycloak will be available at keycloak.%domain%
+domain: dev.bigbang.mil
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+  istio:
+    enabled: false
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+    # Default peer authentication
+    mtls:
+      # STRICT = Allow only mutual TLS traffic
+      # PERMISSIVE = Allow both plain text and mutual TLS traffic
+      mode: STRICT
+  routes:
+    inbound:
+      keycloak:
+        enabled: true
+        gateways:
+          - istio-gateway/passthrough-ingressgateway
+        hosts:
+          - keycloak.{{ .Values.domain }}
+        service: keycloak-keycloak-http.keycloak.svc.cluster.local
+        port: 8443
+        passthrough:
+          enabled: true
+  networkPolicies:
+    # -- Enable or disable the bundled network policies
+    enabled: false
+    # -- Configures additional network policies beyond the ones bundled with the chart, using the bb-common shorthand
+    ingress:
+      to:
+        keycloak:9000:
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: false
+    egress:
+      definitions:
+        smtp-subnets:
+          to:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
+          ports:
+            - port: 587
+              protocol: TCP
+        ldap-subnets:
+          to:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
+          ports:
+            - port: 636
+              protocol: TCP
+      from:
+        keycloak:
+          to:
+            k8s:
+              tempo/tempo:9411: false
+            definition:
+              ldap-subnets: false
+              smtp-subnets: false
+bbtests:
+  # -- Enables the Big Bang test hooks
+  enabled: false
+  image: "registry1.dso.mil/ironbank/big-bang/base:2.1.0"
+  imagePullPolicy: IfNotPresent
+  scripts:
+    envs:
+      HEADLESS_SERVICE: "keycloak-keycloak-headless.keycloak.svc.cluster.local"
+      PORT: "7800"
+      TIMEOUT: "10"
+# -- Values to pass to [the upstream Keycloak chart](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx)
+# @default -- Upstream chart values
+upstream:
+  fullnameOverride: "keycloak-keycloak"
+  nameOverride: "keycloak"
+  podAnnotations:
+    proxy.istio.io/config: |
+      proxyMetadata:
+        ISTIO_META_DNS_CAPTURE: "true"
+  replicas: 1
+  image:
+    repository: registry1.dso.mil/ironbank/opensource/keycloak/keycloak
+    # Overrides the Keycloak image tag whose default is the chart appVersion
+    tag: "26.7.2"
+  podSecurityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+  # **arg: "start" needs to be set for the container to start up properly**
+  args:
+    - "start"
+  extraEnvFrom: |
+    - secretRef:
+        name: '{{ include "keycloak.fullname" . }}-env'
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+    limits:
+      memory: "1Gi"
+  # The secrets can also be independently created separate from this helm chart.
+  # for example with a gitops tool like flux with a kustomize overlay.
+  # NOTE: Secret values can be templated
+  secrets:
+    env:
+      stringData:
+        # https://docs.redhat.com/en/documentation/red_hat_build_of_openjdk/11/html-single/configuring_red_hat_build_of_openjdk_11_on_rhel_with_fips/index
+        JAVA_TOOL_OPTIONS: "-Dcom.redhat.fips=false"
+        # default admin credentials. Override them for production deployments
+        KEYCLOAK_ADMIN: "admin"
+        KEYCLOAK_ADMIN_PASSWORD: "password"
+        # java opts for jgroups required for infinispan distributed cache when using the kubernetes stack.
+        # https://www.keycloak.org/server/caching
+        JAVA_OPTS_APPEND: -Djgroups.dns.query={{ include "keycloak.fullname" . }}-headless
+        KC_HOSTNAME: "keycloak.dev.bigbang.mil"
+        # Disable async bootstrap, as keycloak will swallow startup errors when async bootstrap is enabled, which can make it difficult to debug startup issues.
+        KC_SERVER_ASYNC_BOOTSTRAP: "false"
+  dbchecker:
+    # If `true`, the dbchecker init container is enabled; this is incompatible with Big Bang
+    # and so is disabled by default.
+    enabled: false
+  # Configures the database connection; can be configured here and/or via environment variables with `upstream.secrets.env`
+  database:
+    vendor: postgres
+    # NOTE: If you change fullnameOverride to something else,
+    # you will need to change the hostname to match : %fullnameOverride%-postgresql
+    hostname: keycloak-keycloak-postgresql
+    port: 5432
+    database: keycloak
+    username: keycloak
+    password: keycloak
+postgresql:
+  # -- If `true`, the Postgresql dependency is enabled
+  enabled: true
+  image:
+    registry: registry1.dso.mil
+    repository: ironbank/opensource/postgres/postgresql
+    tag: "18.4"
+  global:
+    security:
+      # -- Allow registry1.dso.mil in lieu of the default bitnami registry
+      allowInsecureImages: true
+    postgresql:
+      auth:
+        # -- PostgreSQL User to create
+        username: keycloak
+        # -- PostgreSQL Password for the new user
+        password: keycloak
+        # -- PostgreSQL Database to create
+        database: keycloak
+  primary:
+    networkPolicy:
+      enabled: false
+    persistence:
+      mountPath: /var/lib/postgresql
+    extraVolumes:
+      - name: run-postgresql
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: run-postgresql
+        mountPath: /run/postgresql
+    extraEnvVars:
+      # The Bitnami chart sets POSTGRES_DATABASE, but the Iron Bank
+      # opensource/postgres image follows the upstream POSTGRES_DB contract.
+      - name: POSTGRES_DB
+        value: keycloak
+  # Use the Iron Bank PostgreSQL image's native data layout for new PG18 data.
+  # Existing Bitnami-layout PG17 data remains on the same PVC at the old
+  # path, but is not automatically migrated; use pg_dump/pg_restore as noted in
+  # the upgrade notice.
+  postgresqlDataDir: /var/lib/postgresql/pgdata/data
+  volumePermissions:
+    enabled: false

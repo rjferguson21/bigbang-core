@@ -1,0 +1,97 @@
+{{- if not .Values.deploymentMode.defenderOnly }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "twistlock-console.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "twistlock-console.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "twistlock-console.selector" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: {{ template "twistlock-console.name" . }}
+      namespace: {{ .Release.Namespace }}
+      labels: {{- include "twistlock-console.labels" . | nindent 8 }}
+      {{- if .Values.annotations }}
+      annotations:
+        {{ toYaml .Values.annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Always
+      serviceAccountName: {{ template "twistlock-console.name" . }}
+      {{- if .Values.imagePullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecretName }}
+      {{- end }}
+      securityContext:
+        runAsUser: 2674
+        runAsGroup: 2674
+        fsGroup: 2674
+        fsGroupChangePolicy: Always
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+        {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+        {{ toYaml .Values.tolerations | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+        {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: {{ template "twistlock-console.name" . }}
+        image: {{ .Values.console.image.repository }}:{{ .Values.console.image.tag }}
+        imagePullPolicy: {{ .Values.console.image.imagePullPolicy }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        securityContext:
+      {{- toYaml .Values.console.securityContext | nindent 10 }}
+        ports:
+        - name: mgmt-https
+          containerPort: {{ .Values.console.ports.managementHttps }}
+        - name: communication
+          containerPort: {{ .Values.console.ports.communication }}
+        - name: mgmt-http
+          containerPort: {{ .Values.console.ports.managementHttp }}
+        env:
+        - name: HIGH_AVAILABILITY_ENABLED
+          value: "false"
+        - name: CONFIG_PATH
+          value: /data/config/twistlock.cfg
+        - name: LOG_PROD
+          value: "true"
+        {{- with .Values.console.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        volumeMounts:
+        - name: twistlock-config-volume
+          mountPath: "/data/config/"
+        - name: console-persistent-volume
+          mountPath: "/var/lib/twistlock"
+          subPath: "var/lib/twistlock"
+        - name: console-persistent-volume
+          mountPath: "/var/lib/twistlock-backup"
+          subPath: "var/lib/twistlock-backup"
+        - name: syslog-socket
+          mountPath: "/dev/log"
+      volumes:
+      - name: console-persistent-volume
+        persistentVolumeClaim:
+          claimName: {{ template "twistlock-console.name" . }}
+      - name: twistlock-config-volume
+        configMap:
+          name: {{ template "twistlock-console.name" . }}
+      - name: syslog-socket
+        {{- if .Values.console.syslogAuditIntegration.enabled}}
+        hostPath:
+          path: "/dev/log"
+        {{- else}}
+        emptyDir: {}
+        {{- end}}
+{{- end }}

@@ -1,0 +1,41 @@
+apiVersion: v2
+name: elasticsearch-kibana
+description: Configurable Deployment of Elasticsearch and Kibana Custom Resources Wrapped Inside a Helm Chart. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+version: 1.44.0-bb.0
+appVersion: 9.5.4
+dependencies:
+  - name: gluon
+    version: 1.1.8
+    repository: oci://registry1.dso.mil/bigbang
+  - name: prometheus-elasticsearch-exporter
+    repository: https://prometheus-community.github.io/helm-charts
+    version: 7.4.0
+    condition: metrics.enabled
+    alias: metrics
+annotations:
+  bigbang.dev/maintenanceTrack: bb_integrated
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    This chart has no upstream and is maintained entirely by the Big Bang team. It is 
+    (usually) updated any time new versions of elasticsearch and kibana are released
+    upstream. The changelog for both can be found at the following places:
+
+    - [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/es-release-notes.html)
+    - [Kibana](https://www.elastic.co/guide/en/kibana/current/release-notes.html)
+  helm.sh/images: |
+    - name: kibana
+      image: registry1.dso.mil/ironbank/elastic/kibana/kibana:9.5.4
+    - name: elasticsearch
+      image: registry1.dso.mil/ironbank/elastic/elasticsearch/elasticsearch:9.5.4
+    - name: base
+      image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+    - name: script-tests
+      condition: bbtests.enabled
+      image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
+    - name: exporter
+      condition: metrics.enabled
+      image: registry1.dso.mil/ironbank/opensource/elasticsearch-exporter:v1.11.0
+    - name: kubectl
+      image: registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.37
+    - name: cypress
+      condition: bbtests.enabled
+      image: registry1.dso.mil/ironbank/big-bang/cypress:15.21.1

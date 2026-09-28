@@ -1,0 +1,4 @@
+# ingore helm unittest tests
+tests/*_test.yaml
+.git/
+*.pack

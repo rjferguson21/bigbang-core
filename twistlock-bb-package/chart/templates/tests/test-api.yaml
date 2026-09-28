@@ -1,0 +1,10 @@
+{{- define "twistlock-test.script-configmap" }}
+{{- end }}
+{{- define "twistlock-test.script-runner" -}}
+{{- end }}
+
+{{- if not .Values.deploymentMode.defenderOnly }}
+    {{- include "gluon.tests.script-configmap.overrides" (list . "twistlock-test.script-configmap") | nindent 0 }}    
+---
+    {{- include "gluon.tests.script-runner.overrides" (list . "twistlock-test.script-runner") | nindent 0 }}
+{{- end }}
