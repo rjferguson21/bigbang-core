@@ -8,6 +8,9 @@ version: "3"
 #   task core:deploy REPO_URL=<git> # core via Argo CD app-of-apps
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
+#
+# No git remote? `task gitea:up` runs a local gitea on the cluster network and
+# pushes the working tree, then:  task core:deploy REPO_URL=$GITEA_REPO_URL
 
 vars:
   CLUSTER: bb-helm
@@ -19,6 +22,8 @@ vars:
   REPO_URL: '{{.REPO_URL | default ""}}'
   TARGET_REVISION: '{{.TARGET_REVISION | default "main"}}'
   ARGOCD_NAMESPACE: '{{.ARGOCD_NAMESPACE | default "argocd"}}'
+  # In-cluster URL of the local dev gitea (see gitea:up) — use as REPO_URL
+  GITEA_REPO_URL: http://gitea:3000/tester/bigbang-core.git
 
 tasks:
   default:
@@ -55,6 +60,46 @@ tasks:
     desc: Delete the test k3d cluster
     cmds:
       - k3d cluster delete {{.CLUSTER}}
+
+  gitea:up:
+    desc: "Stand up a local gitea on the cluster network and push the working tree, so Argo CD has a reachable REPO_URL ({{.GITEA_REPO_URL}})"
+    vars:
+      NET: 'k3d-{{.CLUSTER}}'
+    cmds:
+      - |
+        set -e
+        # 1. gitea container on the cluster network (idempotent)
+        docker start gitea 2>/dev/null || docker run -d --name gitea --network {{.NET}} \
+          -e GITEA__security__INSTALL_LOCK=true \
+          -e GITEA__server__ROOT_URL=http://gitea:3000/ \
+          -e GITEA__server__DISABLE_SSH=true \
+          -e GITEA__service__DISABLE_REGISTRATION=true \
+          gitea/gitea:1.22 >/dev/null
+        docker network connect {{.NET}} gitea 2>/dev/null || true
+        # 2. wait until ready
+        until docker exec gitea sh -c 'wget -qO- http://localhost:3000/api/healthz 2>/dev/null | grep -q pass'; do sleep 2; done
+        # 3. admin user + public repo (idempotent)
+        docker exec -u git gitea gitea admin user create --admin --username tester --password test1234 \
+          --email t@t.dev --must-change-password=false 2>/dev/null || true
+        docker exec gitea sh -c "curl -s -u tester:test1234 -X POST http://localhost:3000/api/v1/user/repos \
+          -H 'Content-Type: application/json' -d '{\"name\":\"bigbang-core\",\"private\":false}'" >/dev/null 2>&1 || true
+        # 4. push the current working tree to main
+        snap=$(mktemp -d)
+        rsync -a --delete --exclude .git --exclude node_modules --exclude test-results ./ "$snap"/
+        git -C "$snap" -c init.defaultBranch=main init -q
+        git -C "$snap" -c user.email=dev@local -c user.name=dev add -A
+        git -C "$snap" -c user.email=dev@local -c user.name=dev commit -qm "working tree snapshot"
+        docker run --rm --network {{.NET}} -v "$snap":/src -w /src \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
+          alpine/git push -f http://tester:test1234@gitea:3000/tester/bigbang-core.git main
+        rm -rf "$snap"
+      - |
+        echo "pushed. deploy core with: task core:deploy REPO_URL={{.GITEA_REPO_URL}}"
+
+  gitea:down:
+    desc: Remove the local dev gitea container
+    cmds:
+      - docker rm -f gitea 2>/dev/null || true
 
   registry:secret:
     desc: Create the private-registry pull secret in NS (from REGISTRY1_* env, or copied from the bb-helm cluster)
