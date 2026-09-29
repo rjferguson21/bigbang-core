@@ -87,10 +87,7 @@ packages:
     enabled: true
     releaseName: public-ingressgateway
     namespace: istio-gateway
-    # wave 3 (after istiod + the wave-2 apps) so istiod's sidecar-injector
-    # webhook is fully serving before the gateway pod is created — otherwise
-    # its "auto" image isn't rewritten and the pod ErrImagePulls.
-    syncWave: 3
+    syncWave: 2
     # the gateway pod ships image "auto" — istiod's injector only rewrites it
     # when the namespace is injection-enabled
     namespaceLabels:
