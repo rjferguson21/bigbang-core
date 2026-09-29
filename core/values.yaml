@@ -87,6 +87,7 @@ packages:
     enabled: true
     releaseName: public-ingressgateway
     namespace: istio-gateway
+    chart: core/istio-gateway/chart
     syncWave: 2
     # the gateway pod ships image "auto" — istiod's injector only rewrites it
     # when the namespace is injection-enabled

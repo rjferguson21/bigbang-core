@@ -162,7 +162,24 @@ tasks:
       - |
         export REPO_URL="{{.SRC_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" ARGOCD_NAMESPACE="{{.ARGOCD_NAMESPACE}}"
         envsubst < core/app-of-apps.yaml | kubectl --context {{.CTX}} apply -f -
-      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} wait --for=jsonpath='{.status.health.status}'=Healthy application --all --timeout=600s
+      # Argo creates the child Applications progressively (per sync wave), so a
+      # plain `wait --all` returns early (only the parent exists at t=0). Poll
+      # until every expected app (parent + enabled packages) reports Healthy.
+      - |
+        ns={{.ARGOCD_NAMESPACE}}
+        # count the child apps the chart renders (exclude the parent app-of-apps)
+        expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
+        echo "waiting for $expected core child apps to be Healthy..."
+        deadline=$(( $(date +%s) + 900 ))
+        while :; do
+          healthy=$(kubectl --context {{.CTX}} -n $ns get applications \
+            -o jsonpath='{range .items[*]}{.metadata.name}{":"}{.status.health.status}{"\n"}{end}' 2>/dev/null \
+            | grep -v '^bigbang-core:' | grep -c ':Healthy$')
+          echo "  $healthy/$expected child apps Healthy"
+          [ "$healthy" -ge "$expected" ] && break
+          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core apps"; kubectl --context {{.CTX}} -n $ns get applications; exit 1; }
+          sleep 10
+        done
       - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get applications
 
   packages:deploy:
