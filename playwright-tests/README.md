@@ -2,7 +2,7 @@
 
 Shared Playwright end-to-end test suite for the Big Bang core packages. These
 tests replace the per-package cypress tests that were previously embedded in
-each package chart (`<pkg>-bb-package/chart/tests/cypress/e2e/`) and run
+each package chart (`<pkg>/chart/tests/cypress/e2e/`) and run
 against an already-deployed cluster.
 
 The dev/CI clusters use self-signed certificates, so the Playwright config

@@ -1,0 +1,274 @@
+version: "3"
+
+# Dev harness for bigbang-core. Creates a k3d cluster (MetalLB + Argo CD
+# bootstrap, registry1 pull-through cache), then deploys the core stack
+# (operator, CRDs, Istio, Kyverno, observability) and the app packages.
+#
+#   task                            # operator smoke test on a fresh cluster (default)
+#   task up                         # full stack: recreate cluster + core + all packages
+#   task core:deploy REPO_URL=<git> # core via Argo CD app-of-apps
+#   task core:deploy:helm           # core directly via helm (no Argo CD)
+#   task down                       # delete the cluster
+
+vars:
+  CHART: oci://ghcr.io/rjferguson21/charts/bigbang-operator
+  # Empty means the latest published version
+  VERSION: '{{.VERSION | default ""}}'
+  OPERATOR_DIR: '{{.OPERATOR_DIR | default "../bigbang-operator"}}'
+  CLUSTER: bb-helm
+  CTX: k3d-bb-helm
+  DEV_IMG: bigbang-operator:dev
+  NAMESPACE: bigbang-operator
+  RELEASE: bigbang-operator
+  # Argo CD source for `core:deploy`. REPO_URL must be reachable/registered by
+  # Argo CD; leave empty to use the direct-helm core path (core:deploy:helm).
+  REPO_URL: '{{.REPO_URL | default ""}}'
+  TARGET_REVISION: '{{.TARGET_REVISION | default "main"}}'
+  ARGOCD_NAMESPACE: '{{.ARGOCD_NAMESPACE | default "argocd"}}'
+
+tasks:
+  default:
+    desc: Create the test cluster, deploy the published operator, and run the smoke test
+    cmds:
+      - task: cluster:create
+      - task: operator:deploy
+      - task: smoke
+
+  cluster:create:
+    desc: Create the dev k3d cluster from k3d/k3d.yaml (no-op if it already exists)
+    status:
+      - k3d cluster list {{.CLUSTER}}
+    cmds:
+      - task: cluster:recreate
+
+  cluster:recreate:
+    desc: "(Re)create the dev k3d cluster from k3d/k3d.yaml (MetalLB + Argo CD bootstrap, registry1 pull-through cache)."
+    preconditions:
+      - sh: test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"
+        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds)"
+    cmds:
+      - k3d cluster delete {{.CLUSTER}} 2>/dev/null || true
+      - k3d registry delete repo1 2>/dev/null || true
+      # Render creds into the config in k3d/ so its relative bootstrap source resolves
+      - envsubst < k3d/k3d.yaml > k3d/.k3d.rendered.yaml
+      - k3d cluster create --config k3d/.k3d.rendered.yaml
+      - rm -f k3d/.k3d.rendered.yaml
+      # Wait for the bootstrapped Argo CD (installed by k3s' helm-controller job)
+      - |
+        until kubectl --context {{.CTX}} -n kube-system get job helm-install-argo-cd >/dev/null 2>&1; do sleep 3; done
+        kubectl --context {{.CTX}} -n kube-system wait --for=condition=complete job/helm-install-argo-cd --timeout=420s
+        kubectl --context {{.CTX}} -n argocd rollout status deploy -l app.kubernetes.io/part-of=argocd --timeout=300s
+
+  cluster:delete:
+    desc: Delete the test k3d cluster
+    cmds:
+      - k3d cluster delete {{.CLUSTER}}
+
+  crds:istio:
+    desc: Apply standalone Istio CRDs so istio-enabled Packages reconcile without installing Istio
+    cmds:
+      - kubectl --context {{.CTX}} apply -f dev/istio-crds/
+
+  operator:deploy:
+    desc: Deploy the published operator chart (published image via chart defaults)
+    cmds:
+      - task: crds:istio
+      - kubectl --context {{.CTX}} create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - >-
+        helm --kube-context {{.CTX}} upgrade --install {{.RELEASE}} {{.CHART}}
+        {{if .VERSION}}--version {{.VERSION}}{{end}}
+        -n {{.NAMESPACE}}
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} rollout status deploy/{{.RELEASE}}-bigbang-operator --timeout=180s
+
+  operator:deploy:dev:
+    desc: Build the operator from OPERATOR_DIR and deploy that instead of the published image
+    cmds:
+      - make -C {{.OPERATOR_DIR}} docker-build IMG={{.DEV_IMG}}
+      - k3d image import {{.DEV_IMG}} -c {{.CLUSTER}}
+      - task: crds:istio
+      - kubectl --context {{.CTX}} create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - >-
+        helm --kube-context {{.CTX}} upgrade --install {{.RELEASE}} {{.OPERATOR_DIR}}/chart
+        -n {{.NAMESPACE}}
+        --set image.repository={{splitList ":" .DEV_IMG | first}}
+        --set image.tag={{splitList ":" .DEV_IMG | last}}
+        --set image.pullPolicy=IfNotPresent
+        --set metrics.bindAddress=":8080"
+        --set metrics.secure=false
+      # A rebuilt image keeps the same tag, so force the rollout to pick it up.
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} rollout restart deploy/{{.RELEASE}}-bigbang-operator
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} rollout status deploy/{{.RELEASE}}-bigbang-operator --timeout=120s
+
+  smoke:
+    desc: Apply the sample Package CR and wait for the operator to reconcile it
+    cmds:
+      - kubectl --context {{.CTX}} apply -f dev/sample-package.yaml
+      - kubectl --context {{.CTX}} wait --for=condition=Ready package --all -A --timeout=120s
+      - kubectl --context {{.CTX}} get packages -A
+      - kubectl --context {{.CTX}} -n example-app get networkpolicies,peerauthentications --no-headers
+
+  registry:secret:
+    desc: Create the private-registry pull secret in NS (from REGISTRY1_* env, or copied from the bb-helm cluster)
+    requires:
+      vars: [NS]
+    cmds:
+      - kubectl --context {{.CTX}} create namespace {{.NS}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - |
+        if [ -n "${REGISTRY1_USERNAME:-}" ]; then
+          kubectl --context {{.CTX}} -n {{.NS}} create secret docker-registry private-registry \
+            --docker-server=registry1.dso.mil \
+            --docker-username="$REGISTRY1_USERNAME" --docker-password="$REGISTRY1_PASSWORD" \
+            --dry-run=client -o yaml | kubectl --context {{.CTX}} -n {{.NS}} apply -f -
+        else
+          echo "REGISTRY1_USERNAME not set; skipping pull secret (the k3d pull-through cache covers registry1)"
+        fi
+
+  package:deploy:
+    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]"
+    requires:
+      vars: [PKG, RELEASE, NS]
+    vars:
+      PKGDIR: '{{.PKGDIR | default "packages"}}'
+    cmds:
+      - task: registry:secret
+        vars: { NS: "{{.NS}}" }
+      - >-
+        helm --kube-context {{.CTX}} upgrade --install {{.RELEASE}} {{.PKGDIR}}/{{.PKG}}/chart
+        -n {{.NS}} --force-conflicts
+        --set domain=dev.bigbang.mil
+        --set bigbangPackage.istio.enabled=true
+        --set bigbangPackage.networkPolicies.enabled=true
+        {{if .EXTRA}}{{.EXTRA}}{{end}}
+        $(test -f dev/values/{{.PKG}}.yaml && echo "-f dev/values/{{.PKG}}.yaml")
+        {{if eq .IGNORE_ERROR "true"}}|| true{{end}}
+
+  core:crds:
+    desc: Remove the operator-smoke dev Istio CRDs so the real istio-crds chart/app can own them
+    cmds:
+      - kubectl --context {{.CTX}} delete -f dev/istio-crds/ --ignore-not-found
+
+  # The following install wave-0 foundation charts directly; the argo path
+  # deploys the same charts as wave-0 Applications in the app-of-apps.
+  core:istio-crds:
+    desc: Install the vendored istio-crds chart (helm path)
+    cmds:
+      - helm --kube-context {{.CTX}} upgrade --install istio-crds core/istio-crds/chart -n istio-system --create-namespace
+
+  core:prometheus-crds:
+    desc: Install the vendored prometheus-operator CRDs (helm path)
+    cmds:
+      - helm --kube-context {{.CTX}} upgrade --install prometheus-operator-crds core/prometheus-operator-crds/chart -n monitoring --create-namespace
+
+  core:operator:
+    desc: Install the vendored bigbang-operator (helm path)
+    cmds:
+      - helm --kube-context {{.CTX}} upgrade --install bigbang-operator core/bigbang-operator/chart -n bigbang-operator --create-namespace
+      - kubectl --context {{.CTX}} -n bigbang-operator rollout status deploy/bigbang-operator-bigbang-operator --timeout=180s
+
+  core:argocd:
+    desc: "Ensure Argo CD is present (the k3d bootstrap installs it; this is a fallback for clusters without it)"
+    status:
+      # matches both the bootstrap Helm release and a raw install.yaml
+      - test -n "$(kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get deploy -l app.kubernetes.io/part-of=argocd -o name 2>/dev/null)"
+    cmds:
+      - kubectl --context {{.CTX}} create namespace {{.ARGOCD_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      # server-side apply: the applicationsets CRD exceeds the client-side annotation limit
+      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} apply --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} rollout status deploy -l app.kubernetes.io/part-of=argocd --timeout=300s
+
+  core:deploy:
+    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Argo CD app-of-apps. Requires REPO_URL reachable by Argo CD."
+    preconditions:
+      - sh: test -n "{{.REPO_URL}}"
+        msg: "REPO_URL is required for the Argo CD core deploy (use core:deploy:helm for the direct-helm path). e.g. REPO_URL=https://.../bigbang-core.git task core:deploy"
+    cmds:
+      - task: core:crds
+      - task: core:argocd
+      # Render the parent app-of-apps and apply it; Argo CD syncs the child
+      # Applications in sync-wave order.
+      - |
+        export REPO_URL="{{.REPO_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" ARGOCD_NAMESPACE="{{.ARGOCD_NAMESPACE}}"
+        envsubst < core/app-of-apps.yaml | kubectl --context {{.CTX}} apply -f -
+      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} wait --for=jsonpath='{.status.health.status}'=Healthy application --all --timeout=600s
+      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get applications
+
+  core:deploy:helm:
+    desc: Deploy the core stack directly with helm (no Argo CD/remote needed — used by the local up flow)
+    cmds:
+      - task: core:crds
+      - task: core:operator
+      - task: core:istio-crds
+      - task: core:prometheus-crds
+      # First attempt may race istiod's own validating webhook while the pod
+      # pulls; the post-rollout re-run converges.
+      - task: package:deploy
+        vars: { PKG: istiod, RELEASE: istiod, NS: istio-system, PKGDIR: core, IGNORE_ERROR: "true" }
+      - kubectl --context {{.CTX}} -n istio-system rollout status deploy/istiod --timeout=300s
+      - task: package:deploy
+        vars: { PKG: istiod, RELEASE: istiod, NS: istio-system, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: istio-gateway, RELEASE: public-ingressgateway, NS: istio-gateway, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: kyverno, RELEASE: kyverno-kyverno, NS: kyverno, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: kyverno-reporter, RELEASE: kyverno-reporter-kyverno-reporter, NS: kyverno-reporter, PKGDIR: core }
+      # observability stack (now part of core)
+      - task: package:deploy
+        vars: { PKG: monitoring, RELEASE: monitoring-monitoring, NS: monitoring, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: loki, RELEASE: logging, NS: logging, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: grafana, RELEASE: monitoring-grafana, NS: monitoring, PKGDIR: core }
+      - task: package:deploy
+        vars: { PKG: alloy, RELEASE: alloy, NS: alloy, PKGDIR: core }
+
+  packages:deploy:
+    desc: Deploy all packages in dependency order (operator and core first)
+    cmds:
+      - task: core:deploy:helm
+      - task: package:deploy
+        vars: { PKG: eck-operator, RELEASE: eck-operator, NS: eck-operator }
+      - kubectl --context {{.CTX}} -n eck-operator rollout status sts/elastic-operator --timeout=180s
+      - task: package:deploy
+        vars: { PKG: elasticsearch-kibana, RELEASE: logging-ek, NS: logging, EXTRA: "--timeout 15m" }
+      - task: package:deploy
+        vars: { PKG: fluentbit, RELEASE: fluentbit, NS: fluentbit }
+      - task: package:deploy
+        vars: { PKG: tempo, RELEASE: tempo-tempo, NS: tempo }
+      - task: package:deploy
+        vars: { PKG: kiali, RELEASE: kiali, NS: kiali }
+      - task: package:deploy
+        vars: { PKG: keycloak, RELEASE: keycloak-keycloak, NS: keycloak }
+      - task: package:deploy
+        vars: { PKG: neuvector, RELEASE: neuvector, NS: neuvector }
+      - task: package:deploy
+        vars: { PKG: twistlock, RELEASE: twistlock, NS: twistlock }
+      - task: packages:status
+
+  packages:status:
+    desc: Show Package CR and pod readiness across all package namespaces
+    cmds:
+      - kubectl --context {{.CTX}} get packages -A
+      - kubectl --context {{.CTX}} get pods -A --no-headers | grep -vE "Running|Completed" || echo "all pods running"
+
+  logs:
+    desc: Tail operator logs
+    cmds:
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} logs -f deploy/{{.RELEASE}}-bigbang-operator
+
+  status:
+    desc: Show operator and Package status on the test cluster
+    cmds:
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} get pods
+      - kubectl --context {{.CTX}} get packages -A
+
+  down:
+    desc: Alias for cluster:delete
+    cmds:
+      - task: cluster:delete
+
+  up:
+    desc: Full stack from scratch — recreate cluster then deploy core (incl. operator) + packages
+    cmds:
+      - task: cluster:recreate
+      - task: packages:deploy

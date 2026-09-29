@@ -1,0 +1,178 @@
+domain: dev.bigbang.mil
+
+# Git source Argo CD pulls the core charts from. Must be registered/reachable
+# by Argo CD; the child Applications reference charts by path within it.
+repoURL: ""
+targetRevision: main
+
+argocd:
+  # Namespace where the Argo CD Application objects are created
+  namespace: argocd
+  project: default
+
+# Applied to every child Application
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+  syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    # honor ignoreDifferences during sync (not just in the diff view) so
+    # server-defaulted fields don't keep apps OutOfSync
+    - RespectIgnoreDifferences=true
+
+# Merged into every package Application's Helm values (domain is added
+# automatically). Per-package `values:` below override these.
+packageValues:
+  bigbangPackage:
+    istio:
+      enabled: true
+    networkPolicies:
+      enabled: true
+
+# One Argo CD Application per entry. `chart` is the path within the repo;
+# `syncWave` sequences them (lower waves sync first, and the app-of-apps waits
+# for each wave to go Healthy before the next). Set enabled=false to skip one.
+packages:
+  # --- wave 0: foundation (operator + CRDs), before anything that uses them ---
+  # The operator reconciles the Package CRs every core chart emits, so it must
+  # be running before wave 1. Its chart ships the packages.bigbang.dev CRD and
+  # defaults to the published GHCR image.
+  bigbang-operator:
+    enabled: true
+    releaseName: bigbang-operator
+    namespace: bigbang-operator
+    chart: core/bigbang-operator/chart
+    syncWave: 0
+  # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring,
+  # kyverno-reporter, alloy.
+  prometheus-operator-crds:
+    enabled: true
+    releaseName: prometheus-operator-crds
+    namespace: monitoring
+    chart: core/prometheus-operator-crds/chart
+    syncWave: 0
+  # Istio CRDs must exist before istiod (and before the operator reconciles
+  # istio-enabled Package CRs) — wave 0 so it lands first.
+  istio-crds:
+    enabled: true
+    releaseName: istio-crds
+    namespace: istio-system
+    chart: core/istio-crds/chart
+    syncWave: 0
+    # the istio-crds chart ships the istiod-default-validator webhook, whose
+    # caBundle/failurePolicy istiod mutates at runtime — ignore that drift
+    ignoreDifferences:
+      - group: admissionregistration.k8s.io
+        kind: ValidatingWebhookConfiguration
+        jqPathExpressions:
+          - '.webhooks[]?.clientConfig.caBundle'
+          - '.webhooks[]?.failurePolicy'
+  istiod:
+    enabled: true
+    releaseName: istiod
+    namespace: istio-system
+    chart: core/istiod/chart
+    syncWave: 1
+    # istiod mutates its webhooks at runtime — injects caBundle and flips
+    # failurePolicy (Ignore -> Fail once ready); ignore both to avoid perma-drift
+    ignoreDifferences:
+      - group: admissionregistration.k8s.io
+        kind: ValidatingWebhookConfiguration
+        jqPathExpressions:
+          - '.webhooks[]?.clientConfig.caBundle'
+          - '.webhooks[]?.failurePolicy'
+  istio-gateway:
+    enabled: true
+    releaseName: public-ingressgateway
+    namespace: istio-gateway
+    chart: core/istio-gateway/chart
+    syncWave: 2
+    # the gateway pod ships image "auto" — istiod's injector only rewrites it
+    # when the namespace is injection-enabled
+    namespaceLabels:
+      istio-injection: enabled
+  kyverno:
+    enabled: true
+    releaseName: kyverno-kyverno
+    namespace: kyverno
+    chart: core/kyverno/chart
+    syncWave: 1
+    # the apiserver defaults .spec.conversion on kyverno's CRDs (the chart
+    # leaves it unset); ignore it so it doesn't count as drift. NOTE: this
+    # argo version still renders these CRDs OutOfSync in the diff view despite
+    # the ignore + RespectIgnoreDifferences — it is cosmetic (kyverno is
+    # Healthy and enforcing). Left here as the correct, minimal config.
+    ignoreDifferences:
+      - group: apiextensions.k8s.io
+        kind: CustomResourceDefinition
+        jsonPointers:
+          - /spec/conversion
+  kyverno-reporter:
+    enabled: true
+    releaseName: kyverno-reporter-kyverno-reporter
+    namespace: kyverno-reporter
+    chart: core/kyverno-reporter/chart
+    syncWave: 2
+  # --- observability stack ---
+  monitoring:
+    enabled: true
+    releaseName: monitoring-monitoring
+    namespace: monitoring
+    chart: core/monitoring/chart
+    syncWave: 2
+  loki:
+    enabled: true
+    releaseName: logging
+    namespace: logging
+    chart: core/loki/chart
+    syncWave: 2
+  grafana:
+    enabled: true
+    releaseName: monitoring-grafana
+    namespace: monitoring
+    chart: core/grafana/chart
+    syncWave: 3  # after monitoring (Prometheus datasource)
+    values:
+      # dev datasource wiring (the umbrella normally provisions this)
+      upstream:
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://monitoring-monitoring-kube-prometheus.monitoring.svc.cluster.local:9090
+                access: proxy
+                isDefault: true
+  alloy:
+    enabled: true
+    releaseName: alloy
+    namespace: alloy
+    chart: core/alloy/chart
+    syncWave: 3  # after loki (log shipping) and monitoring (scraping)
+    values:
+      # dev collector wiring: ship pod logs to loki, expose logs collector to prometheus
+      upstream:
+        destinations:
+          loki:
+            type: loki
+            url: http://logging-loki.logging.svc.cluster.local:3100/loki/api/v1/push
+        collectors:
+          alloy-logs:
+            enabled: true
+            presets:
+              - daemonset
+              - filesystem-log-reader
+            global:
+              podSecurityContext:
+                fsGroup: 0
+        podLogsViaLoki:
+          enabled: true
+          destinations:
+            - loki
+      serviceMonitors:
+        - name: alloy-logs
+          selectorLabels:
+            app.kubernetes.io/name: alloy-logs

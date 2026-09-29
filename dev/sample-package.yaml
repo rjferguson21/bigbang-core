@@ -1,0 +1,16 @@
+# Minimal smoke-test Package for the dev cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: example-app
+---
+apiVersion: bigbang.dev/v1alpha1
+kind: Package
+metadata:
+  name: example-app
+  namespace: example-app
+spec:
+  istio:
+    enabled: true
+  networkPolicies:
+    enabled: true

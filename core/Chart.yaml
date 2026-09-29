@@ -1,0 +1,11 @@
+apiVersion: v2
+name: bigbang-core
+description: Argo CD app-of-apps for the Big Bang core stack (Istio + Kyverno). Renders one Argo CD Application per core package, sequenced with sync waves.
+type: application
+version: 0.2.0
+appVersion: "0.1.0"
+keywords:
+  - bigbang
+  - argocd
+  - istio
+  - kyverno

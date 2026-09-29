@@ -1,0 +1,13 @@
+# Small footprint for the dev cluster
+kibana:
+  count: 1
+elasticsearch:
+  master:
+    count: 1
+  data:
+    count: 1
+  # Dev hosts often run >85% disk; keep replicas allocatable so kibana can go green
+  config:
+    cluster.routing.allocation.disk.watermark.low: 95%
+    cluster.routing.allocation.disk.watermark.high: 97%
+    cluster.routing.allocation.disk.watermark.flood_stage: 98%

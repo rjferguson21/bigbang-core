@@ -1,0 +1,4 @@
+# The istio dashboards ConfigMaps target the monitoring namespace, which
+# does not exist yet during core bring-up.
+monitoring:
+  enabled: false
