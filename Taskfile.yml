@@ -5,12 +5,12 @@ version: "3"
 # (operator, CRDs, Istio, Kyverno, observability) and the app packages.
 #
 #   task (= up)                     # full stack: recreate cluster + core + all packages
-#   task core:deploy REPO_URL=<git> # core via Argo CD app-of-apps
+#   task core:deploy [REPO_URL=<git>] # core via Argo CD (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
 #
-# No git remote? `task gitea:up` runs a local gitea on the cluster network and
-# pushes the working tree, then:  task core:deploy REPO_URL=$GITEA_REPO_URL
+# With no REPO_URL, core:deploy/up auto-run gitea:up (a local gitea on the
+# cluster network seeded from the working tree) and deploy from it.
 
 vars:
   CLUSTER: bb-helm
@@ -27,7 +27,7 @@ vars:
 
 tasks:
   default:
-    desc: "Full stack from scratch (alias for up) — requires REPO_URL"
+    desc: "Full stack from scratch (alias for up)"
     cmds:
       - task: up
 
@@ -148,16 +148,19 @@ tasks:
       - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} rollout status deploy -l app.kubernetes.io/part-of=argocd --timeout=300s
 
   core:deploy:
-    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Argo CD app-of-apps. Requires REPO_URL reachable by Argo CD."
-    preconditions:
-      - sh: test -n "{{.REPO_URL}}"
-        msg: "REPO_URL is required (the git repo Argo CD pulls the core charts from). e.g. REPO_URL=https://.../bigbang-core.git task core:deploy"
+    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Argo CD app-of-apps. Uses REPO_URL if set, else stands up a local gitea (gitea:up)."
+    vars:
+      # explicit REPO_URL wins; otherwise fall back to the local dev gitea
+      SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
     cmds:
       - task: core:argocd
+      # No REPO_URL given → seed the local gitea with the working tree and use it
+      - |
+        if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
       # Render the parent app-of-apps and apply it; Argo CD syncs the child
       # Applications in sync-wave order.
       - |
-        export REPO_URL="{{.REPO_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" ARGOCD_NAMESPACE="{{.ARGOCD_NAMESPACE}}"
+        export REPO_URL="{{.SRC_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" ARGOCD_NAMESPACE="{{.ARGOCD_NAMESPACE}}"
         envsubst < core/app-of-apps.yaml | kubectl --context {{.CTX}} apply -f -
       - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} wait --for=jsonpath='{.status.health.status}'=Healthy application --all --timeout=600s
       - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get applications
@@ -207,7 +210,7 @@ tasks:
       - task: cluster:delete
 
   up:
-    desc: "Full stack from scratch — recreate cluster, deploy core via Argo CD, then app packages. Requires REPO_URL."
+    desc: "Full stack from scratch — recreate cluster, deploy core via Argo CD, then app packages. Set REPO_URL to use a real remote; otherwise a local gitea is used."
     cmds:
       - task: cluster:recreate
       - task: core:deploy

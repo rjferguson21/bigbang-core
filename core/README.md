@@ -38,8 +38,8 @@ next:
 
 - wave 0: `istio-crds` (Istio CRDs, before anything that uses them)
 - wave 1: `istiod`, `kyverno`
-- wave 2: `istio-gateway` (after istiod), `kyverno-reporter` (after kyverno), `monitoring`, `loki`
-- wave 3: `grafana` (after monitoring's Prometheus datasource), `alloy` (after loki + monitoring)
+- wave 2: `kyverno-reporter` (after kyverno), `monitoring`, `loki`
+- wave 3: `istio-gateway` (its "auto" image needs istiod's injector fully serving), `grafana` (after monitoring's Prometheus datasource), `alloy` (after loki + monitoring)
 
 `istio-crds` is a member of the app-of-apps (wave 0). `kyverno-reporter`
 additionally needs the prometheus-operator CRDs, installed by the `core:crds`
