@@ -1,11 +1,12 @@
 version: "3"
 
-# Dev harness for bigbang-core. Creates a k3d cluster (MetalLB + Argo CD
-# bootstrap, registry1 pull-through cache), then deploys the core stack
-# (operator, CRDs, Istio, Kyverno, observability) and the app packages.
+# Dev harness for bigbang-core. Creates a k3d cluster from the bb-k3d chart
+# (MetalLB + Flux bootstrap, registry1 pull-through cache), then deploys the
+# core stack (operator, CRDs, Istio, Kyverno, observability) and the app
+# packages.
 #
 #   task (= up)                     # full stack: recreate cluster + core + all packages
-#   task core:deploy [REPO_URL=<git>] # core via Argo CD (REPO_URL optional; defaults to local gitea)
+#   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
 #
@@ -17,13 +18,19 @@ vars:
   CTX: k3d-bb-helm
   NAMESPACE: bigbang-operator
   RELEASE: bigbang-operator
-  # Argo CD source for `core:deploy` (and `up`) — the git repo Argo CD pulls
-  # the core charts from. Must be reachable/registered by Argo CD.
+  # Flux source for `core:deploy` (and `up`) — the git repo source-controller
+  # pulls the core charts from. Must be reachable from the cluster.
   REPO_URL: '{{.REPO_URL | default ""}}'
   TARGET_REVISION: '{{.TARGET_REVISION | default "main"}}'
-  ARGOCD_NAMESPACE: '{{.ARGOCD_NAMESPACE | default "argocd"}}'
+  FLUX_NAMESPACE: '{{.FLUX_NAMESPACE | default "flux-system"}}'
   # In-cluster URL of the local dev gitea (see gitea:up) — use as REPO_URL
   GITEA_REPO_URL: http://gitea:3000/tester/bigbang-core.git
+  # The bbtask bb-k3d chart: renders the k3d Simple config plus the bootstrap
+  # manifests (MetalLB + Flux) that k3d injects into the k3s server.
+  BB_K3D_CHART: oci://ghcr.io/rjferguson21/bb-k3d:0.3.5
+  # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
+  # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
+  K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
 
 tasks:
   default:
@@ -32,29 +39,44 @@ tasks:
       - task: up
 
   cluster:create:
-    desc: Create the dev k3d cluster from k3d/k3d.yaml (no-op if it already exists)
+    desc: Create the dev k3d cluster from the bb-k3d chart (no-op if it already exists)
     status:
       - k3d cluster list {{.CLUSTER}}
     cmds:
       - task: cluster:recreate
 
   cluster:recreate:
-    desc: "(Re)create the dev k3d cluster from k3d/k3d.yaml (MetalLB + Argo CD bootstrap, registry1 pull-through cache)."
+    desc: "(Re)create the dev k3d cluster from the bb-k3d chart (MetalLB + Flux bootstrap, registry1 pull-through cache)."
     preconditions:
       - sh: test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"
         msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds)"
     cmds:
       - k3d cluster delete {{.CLUSTER}} 2>/dev/null || true
       - k3d registry delete repo1 2>/dev/null || true
-      # Render creds into the config in k3d/ so its relative bootstrap source resolves
-      - envsubst < k3d/k3d.yaml > k3d/.k3d.rendered.yaml
-      - k3d cluster create --config k3d/.k3d.rendered.yaml
-      - rm -f k3d/.k3d.rendered.yaml
-      # Wait for the bootstrapped Argo CD (installed by k3s' helm-controller job)
+      # Render the chart; k3d resolves the injected bootstrap.yaml relative to
+      # the config file, so both land in k3d/.rendered/
       - |
-        until kubectl --context {{.CTX}} -n kube-system get job helm-install-argo-cd >/dev/null 2>&1; do sleep 3; done
-        kubectl --context {{.CTX}} -n kube-system wait --for=condition=complete job/helm-install-argo-cd --timeout=420s
-        kubectl --context {{.CTX}} -n argocd rollout status deploy -l app.kubernetes.io/part-of=argocd --timeout=300s
+        mkdir -p k3d/.rendered {{.K3D_VOLUME_DIR}}/cypress
+        echo "*" > k3d/.rendered/.gitignore
+        helm template k3d {{.BB_K3D_CHART}} \
+          --set k3d.serverIP=0.0.0.0 \
+          --set k3d.metricsServer=true \
+          --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
+          --set registry1.username=$REGISTRY1_USERNAME \
+          --set registry1.password=$REGISTRY1_PASSWORD \
+          > k3d/.rendered/bootstrap.yaml
+        yq 'select(.kind == "Simple")' k3d/.rendered/bootstrap.yaml > k3d/.rendered/k3d.yaml
+      - k3d cluster create --config k3d/.rendered/k3d.yaml
+      # Wait for the bootstrapped Flux controllers (installed by the k3s
+      # deploy controller from the injected manifests). bb-k3d puts them in
+      # the default namespace; they watch all namespaces, so the core objects
+      # can still live in FLUX_NAMESPACE.
+      - |
+        until kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o name 2>/dev/null | grep -q helm-controller; do sleep 3; done
+        ns=$(kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o jsonpath='{.items[0].metadata.namespace}')
+        for d in $(kubectl --context {{.CTX}} -n "$ns" get deploy -l app.kubernetes.io/part-of=flux -o name); do
+          kubectl --context {{.CTX}} -n "$ns" rollout status "$d" --timeout=300s
+        done
 
   cluster:delete:
     desc: Delete the test k3d cluster
@@ -62,7 +84,7 @@ tasks:
       - k3d cluster delete {{.CLUSTER}}
 
   gitea:up:
-    desc: "Stand up a local gitea on the cluster network and push the working tree, so Argo CD has a reachable REPO_URL ({{.GITEA_REPO_URL}})"
+    desc: "Stand up a local gitea on the cluster network and push the working tree, so Flux has a reachable REPO_URL ({{.GITEA_REPO_URL}})"
     vars:
       NET: 'k3d-{{.CLUSTER}}'
     cmds:
@@ -136,51 +158,54 @@ tasks:
         $(test -f dev/values/{{.PKG}}.yaml && echo "-f dev/values/{{.PKG}}.yaml")
         {{if eq .IGNORE_ERROR "true"}}|| true{{end}}
 
-  core:argocd:
-    desc: "Ensure Argo CD is present (the k3d bootstrap installs it; this is a fallback for clusters without it)"
+  core:flux:
+    desc: "Ensure Flux is present in some namespace (the k3d bootstrap installs it; this is a fallback for clusters without it, into flux-system)"
     status:
-      # matches both the bootstrap Helm release and a raw install.yaml
-      - test -n "$(kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get deploy -l app.kubernetes.io/part-of=argocd -o name 2>/dev/null)"
+      - test -n "$(kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o name 2>/dev/null)"
     cmds:
-      - kubectl --context {{.CTX}} create namespace {{.ARGOCD_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
-      # server-side apply: the applicationsets CRD exceeds the client-side annotation limit
-      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} apply --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} rollout status deploy -l app.kubernetes.io/part-of=argocd --timeout=300s
+      - kubectl --context {{.CTX}} apply -f https://github.com/fluxcd/flux2/releases/latest/download/install.yaml
+      - |
+        for d in $(kubectl --context {{.CTX}} -n flux-system get deploy -o name); do
+          kubectl --context {{.CTX}} -n flux-system rollout status "$d" --timeout=300s
+        done
 
   core:deploy:
-    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Argo CD app-of-apps. Uses REPO_URL if set, else stands up a local gitea (gitea:up)."
+    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Flux HelmReleases. Uses REPO_URL if set, else stands up a local gitea (gitea:up)."
     vars:
       # explicit REPO_URL wins; otherwise fall back to the local dev gitea
       SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
     cmds:
-      - task: core:argocd
+      - task: core:flux
+      # Namespace for the GitRepository + HelmReleases (the controllers may
+      # run elsewhere; they watch all namespaces)
+      - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
       # No REPO_URL given → seed the local gitea with the working tree and use it
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
-      # Render the parent app-of-apps and apply it; Argo CD syncs the child
-      # Applications in sync-wave order.
+      # Apply the GitRepository + parent HelmRelease; the parent renders the
+      # child HelmReleases, which helm-controller reconciles in dependsOn order.
       - |
-        export REPO_URL="{{.SRC_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" ARGOCD_NAMESPACE="{{.ARGOCD_NAMESPACE}}"
-        envsubst < core/app-of-apps.yaml | kubectl --context {{.CTX}} apply -f -
-      # Argo creates the child Applications progressively (per sync wave), so a
-      # plain `wait --all` returns early (only the parent exists at t=0). Poll
-      # until every expected app (parent + enabled packages) reports Healthy.
+        export REPO_URL="{{.SRC_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" FLUX_NAMESPACE="{{.FLUX_NAMESPACE}}"
+        envsubst < core/bigbang-core.yaml | kubectl --context {{.CTX}} apply -f -
+      # The parent creates the child HelmReleases progressively (per dependsOn
+      # chain), so a plain `wait --all` returns early (only the parent exists
+      # at t=0). Poll until every enabled package's HelmRelease reports Ready.
       - |
-        ns={{.ARGOCD_NAMESPACE}}
-        # count the child apps the chart renders (exclude the parent app-of-apps)
+        ns={{.FLUX_NAMESPACE}}
+        # count the child releases the chart renders (exclude the parent)
         expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
-        echo "waiting for $expected core child apps to be Healthy..."
+        echo "waiting for $expected core HelmReleases to be Ready..."
         deadline=$(( $(date +%s) + 900 ))
         while :; do
-          healthy=$(kubectl --context {{.CTX}} -n $ns get applications \
-            -o jsonpath='{range .items[*]}{.metadata.name}{":"}{.status.health.status}{"\n"}{end}' 2>/dev/null \
-            | grep -v '^bigbang-core:' | grep -c ':Healthy$')
-          echo "  $healthy/$expected child apps Healthy"
-          [ "$healthy" -ge "$expected" ] && break
-          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core apps"; kubectl --context {{.CTX}} -n $ns get applications; exit 1; }
+          ready=$(kubectl --context {{.CTX}} -n $ns get helmreleases \
+            -o jsonpath='{range .items[*]}{.metadata.name}{":"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
+            | grep -v '^bigbang-core:' | grep -c ':True$' || true)
+          echo "  $ready/$expected HelmReleases Ready"
+          [ "$ready" -ge "$expected" ] && break
+          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core HelmReleases"; kubectl --context {{.CTX}} -n $ns get helmreleases; exit 1; }
           sleep 10
         done
-      - kubectl --context {{.CTX}} -n {{.ARGOCD_NAMESPACE}} get applications
+      - kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} get helmreleases
 
   packages:deploy:
     desc: Deploy the app packages with helm (assumes core is already deployed via core:deploy)
@@ -227,7 +252,7 @@ tasks:
       - task: cluster:delete
 
   up:
-    desc: "Full stack from scratch — recreate cluster, deploy core via Argo CD, then app packages. Set REPO_URL to use a real remote; otherwise a local gitea is used."
+    desc: "Full stack from scratch — recreate cluster, deploy core via Flux, then app packages. Set REPO_URL to use a real remote; otherwise a local gitea is used."
     cmds:
       - task: cluster:recreate
       - task: core:deploy

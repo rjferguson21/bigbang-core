@@ -1,11 +1,11 @@
 apiVersion: v2
 name: bigbang-core
-description: Argo CD app-of-apps for the Big Bang core stack (Istio + Kyverno). Renders one Argo CD Application per core package, sequenced with sync waves.
+description: Flux parent chart for the Big Bang core stack (Istio + Kyverno). Renders one Flux HelmRelease per core package, sequenced with dependsOn.
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "0.1.0"
 keywords:
   - bigbang
-  - argocd
+  - flux
   - istio
   - kyverno

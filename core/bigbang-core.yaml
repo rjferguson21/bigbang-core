@@ -1,0 +1,45 @@
+# Parent release — a GitRepository for this repo plus a HelmRelease sourcing
+# the core chart, which renders the child HelmRelease per core package.
+# helm-controller sequences the children via their dependsOn chains
+# (istiod -> istio-gateway, kyverno -> kyverno-reporter).
+#
+# Applied by `task core:deploy` with ${REPO_URL}/${TARGET_REVISION}/${FLUX_NAMESPACE}
+# substituted; edit and `kubectl apply -f` for manual use.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: bigbang-core
+  namespace: ${FLUX_NAMESPACE}
+spec:
+  interval: 1m
+  url: ${REPO_URL}
+  ref:
+    branch: ${TARGET_REVISION}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: bigbang-core
+  namespace: ${FLUX_NAMESPACE}
+spec:
+  interval: 1m
+  # The parent only creates the child HelmReleases — don't helm-wait on them
+  # (helm-controller would treat their Ready condition as part of the install
+  # and tear everything down when the stack outlasts the timeout); the
+  # Taskfile polls the children for convergence instead.
+  install:
+    disableWait: true
+    remediation:
+      retries: -1
+  upgrade:
+    disableWait: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  chart:
+    spec:
+      chart: core
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: bigbang-core

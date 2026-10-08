@@ -99,12 +99,6 @@ bigbangPackage:
             k8s:
               # Allow Kiali to access Grafana (generates NetworkPolicy + AuthorizationPolicy)
               kiali-service-account@kiali/kiali: true
-        # Gateway ingress to the grafana container port; the route-generated
-        # policies use the service port (80) and do not match the pod port.
-        grafana:3000:
-          from:
-            k8s:
-              public-ingressgateway-ingressgateway-service-account@istio-gateway/public-ingressgateway: true
   routes:
     inbound:
       grafana:
