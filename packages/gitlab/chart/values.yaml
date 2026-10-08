@@ -1,0 +1,829 @@
+# Renders a bigbang.dev/v1alpha1 Package CR from the istio, networkPolicies,
+# and routes values below. Requires the bigbang-operator to be installed.
+# The subtrees are passed to the CR spec as-is; anything unset falls back to
+# the operator's defaults.
+bigbangPackage:
+  enabled: true
+  labels: {}
+  annotations: {}
+
+  istio:
+    enabled: false
+    authorizationPolicies:
+      enabled: true
+      generateFromNetpol: true
+
+  routes:
+    inbound:
+      gitlab:
+        enabled: true
+        gateways:
+        - istio-gateway/public-ingressgateway
+        hosts:
+        - gitlab.{{ .Values.domain }}
+        # the custom http rules below drive the VirtualService; service/port
+        # are still required by the operator (ServiceEntry + netpol)
+        service: gitlab-webservice-default
+        port: 8181
+        http:
+        - fault:
+            abort:
+              httpStatus: 403
+              percentage:
+                value: 100
+          match:
+          - uri:
+              prefix: /-/metrics
+          route:
+          - destination:
+              host: gitlab-webservice-default
+              port:
+                number: 8181
+        - match:
+          - uri:
+              prefix: /
+          route:
+          - destination:
+              host: gitlab-webservice-default
+              port:
+                number: 8181
+        - match:
+          - uri:
+              prefix: /admin/sidekiq
+          route:
+          - destination:
+              host: gitlab-webservice-default
+              port:
+                number: 8080
+        selector:
+          app: webservice
+      registry:
+        enabled: false
+        gateways:
+        - istio-gateway/public-ingressgateway
+        hosts:
+        - registry.{{ .Values.domain }}
+        service: gitlab-registry
+        port: 5000
+        selector:
+          app: registry
+    outbound:
+      gitlab:
+        enabled: true
+        hosts:
+        - gitlab.com
+        - version.gitlab.com
+      gravatar:
+        enabled: true
+        hosts:
+        - secure.gravatar.com
+
+  networkPolicies:
+    enabled: false
+    ingress:
+      to:
+        redis:9121:
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+        gitlab-exporter:9168:
+          podSelector:
+            matchLabels:
+              app: gitlab-exporter
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+        gitaly:9236:
+          podSelector:
+            matchLabels:
+              app: gitaly
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+        webservice:[8083,8084,9229]:
+          podSelector:
+            matchLabels:
+              app: webservice
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+        registry:5001:
+          podSelector:
+            matchLabels:
+              app: registry
+          from:
+            k8s:
+              monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+    egress:
+      from:
+        "*":
+          to:
+            definition:
+              kubeAPI: true
+
+## NOTICE
+#
+# Due to the scope and complexity of this chart, all possible values are
+# not documented in this file. Extensive documentation is available.
+#
+# Please read the docs: https://docs.gitlab.com/charts/
+#
+# Because properties are regularly added, updated, or relocated, it is
+# _strongly suggest_ to not "copy and paste" this YAML. Please provide
+# Helm only those properties you need, and allow the defaults to be
+# provided by the version of this chart at the time of deployment.
+
+## Advanced Configuration
+## https://docs.gitlab.com/charts/advanced
+#
+# Documentation for advanced configuration, such as
+# - External PostgreSQL
+# - External Gitaly
+# - External Redis
+# - External NGINX
+# - External Object Storage providers
+# - PersistentVolume configuration
+
+## The global properties are used to configure multiple charts at once.
+## https://docs.gitlab.com/charts/charts/globals
+
+global:
+
+  # gitlab charts generally use a helper to prefer `imagePullSecrets` -- but not always.
+  # so, we define both `global.image.pullSecrets` and `global.imagePullSecrets` here at the global level
+  image:
+    pullSecrets:
+    - name: private-registry
+
+  imagePullSecrets:
+  - name: private-registry
+
+  ## https://docs.gitlab.com/charts/charts/globals#configure-host-settings
+  hosts:
+    domain: dev.bigbang.mil
+    gitlab:
+      name: gitlab.dev.bigbang.mil
+    registry:
+      name: registry.dev.bigbang.mil
+    # uncomment to enable KAS with custom hostname
+    # kas:
+    #   name: kas.dev.bigbang.mil
+
+  ## https://docs.gitlab.com/charts/charts/globals#configure-ingress-settings
+  ingress:
+   # apiVersion: ""
+    configureCertmanager: false
+
+  # Big Bang provides ingress through Istio. GitLab chart 10 enables Gateway API
+  # and an Envoy Gateway dependency by default, so both must remain disabled here.
+  gatewayApi:
+    enabled: false
+    installEnvoy: false
+    configureCertmanager: false
+
+  # Override the API version to use for HorizontalPodAutoscaler
+  hpa:
+    apiVersion: "autoscaling/v2"
+
+  # Override the API version to use for PodDisruptionBudget
+  pdb:
+    apiVersion: "policy/v1"
+
+  # Override the API version to use for CronJob
+  batch:
+    cronJob:
+      apiVersion: "batch/v1"
+
+  ## https://docs.gitlab.com/charts/charts/globals#configure-appconfig-settings
+  ## Rails based portions of this chart share many settings
+  appConfig:
+    ## https://docs.gitlab.com/charts/charts/globals#general-application-settings
+    defaultCanCreateGroup: false
+
+    # Disable aggregated Service Ping by default.
+    enableUsagePing: false
+
+    # This controls the database default for a new installation. The runtime
+    # override on webservice and Sidekiq below also covers existing instances.
+    initialDefaults:
+      gitlabProductUsageData: false
+
+    omniauth:
+      enabled: false
+
+
+  ## https://docs.gitlab.com/charts/charts/gitlab/kas/
+  kas:
+    enabled: false
+
+  ## https://docs.gitlab.com/charts/charts/globals#custom-certificate-authorities
+  # configuration of certificates container & custom CA injection
+  certificates:
+    image:
+      repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/certificates
+      tag: v19.3.2-ubi
+    init:
+      securityContext:
+        capabilities:
+          drop:
+          - ALL
+        runAsUser: 65534
+        runAsNonRoot: true
+    customCAs:
+      # DoD approved certificates from https://public.cyber.mil/pki-pke/pkipke-document-library/
+
+    - secret: ca-certs-australian-defence-organisation-cross-cert-chain
+    - secret: ca-certs-australian-defence-organisation-direct-trust-chain
+    - secret: ca-certs-boeing
+    - secret: ca-certs-carillon-federal-services-trust-chain-1
+    - secret: ca-certs-carillon-federal-services-trust-chain-2
+    - secret: ca-certs-department-of-state-trust-chain-1
+    - secret: ca-certs-department-of-state-trust-chain-2
+    - secret: ca-certs-digicert-federal-ssp-trust-chain-1
+    - secret: ca-certs-digicert-federal-ssp-trust-chain-2
+    - secret: ca-certs-digicert-nfi-trust-chain-1
+    - secret: ca-certs-digicert-nfi-trust-chain-2
+    - secret: ca-certs-entrust-federal-ssp-trust-chain-1
+    - secret: ca-certs-entrust-federal-ssp-trust-chain-2
+    - secret: ca-certs-entrust-federal-ssp-trust-chain-3
+    - secret: ca-certs-entrust-managed-service-nfi
+    - secret: ca-certs-exostar-llc
+    - secret: ca-certs-identrust-nfi
+    - secret: ca-certs-lockheed-martin
+    - secret: ca-certs-netherlands-ministry-of-defence
+    - secret: ca-certs-northrop-grumman
+    - secret: ca-certs-raytheon-trust-chain-1
+    - secret: ca-certs-raytheon-trust-chain-2
+    - secret: ca-certs-us-treasury-ssp-trust-chain-1
+    - secret: ca-certs-us-treasury-ssp-trust-chain-2
+    - secret: ca-certs-verizon-cybertrust-federal-ssp
+    - secret: ca-certs-widepoint-federal-ssp-trust-chain-1
+    - secret: ca-certs-widepoint-federal-ssp-trust-chain-2
+    - secret: ca-certs-widepoint-nfi
+    - secret: ca-certs-dod-intermediate-and-issuing-ca-certs
+    - secret: ca-certs-dod-trust-anchors-self-signed
+    - secret: ca-certs-eca
+
+  ## kubectl image used by hooks to carry out specific jobs
+  kubectl:
+    image:
+      repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/kubectl
+      tag: v19.3.2-ubi
+    securityContext:
+      # in most base images, this is `nobody:nogroup`
+      runAsUser: 65534
+      fsGroup: 65534
+      seccompProfile:
+        type: "RuntimeDefault"
+  gitlabBase:
+    image:
+      # Use the Verified Publisher CNG UBI gitlab-base image for configure/init containers.
+      repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-base
+      tag: "v19.3.2-ubi"
+
+  ## https://docs.gitlab.com/charts/charts/globals#service-accounts
+  serviceAccount:
+    enabled: true
+    create: true
+    annotations: {}
+    automountServiceAccountToken: false
+    ## Name to be used for serviceAccount, otherwise defaults to chart fullname
+    # name:
+
+## End of global
+
+### -- We are exposing only the keys that BigBang overrides from the upstream chart. 
+### Please refer to the upstream chart via "helm show values ./chart/charts/<upstream-package.tar.gz>" for other value configs.
+### @default -- Upstream chart values
+
+upstream:
+  nameOverride: "gitlab"
+  # The optional AI Gateway remains disabled by the upstream chart. These
+  # overrides make its supported images and runtime settings Big Bang safe when
+  # a consumer enables it.
+  ai-gateway:
+    image:
+      repository: registry1.dso.mil/gitlab/gitlab-org/modelops/applied-ml/code-suggestions/ai-assist/model-gateway
+      tag: self-hosted-v19.2.0-ee
+    imagePullSecrets:
+    - name: private-registry
+    init:
+      resources:
+        requests:
+          cpu: 200m
+          memory: 200Mi
+        limits:
+          cpu: 200m
+          memory: 200Mi
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    serviceAccount:
+      automount: false
+    # The upstream Helm test uses an unqualified BusyBox image and does not
+    # support imagePullSecrets. Big Bang uses Gluon tests instead.
+    test:
+      enabled: false
+      image: registry1.dso.mil/ironbank/afdco/docker/busybox:1.37.0
+    grpc-tls-proxy:
+      image:
+        repository: registry1.dso.mil/ironbank/opensource/nginx/nginx
+        tag: 1.31.5
+      imagePullSecrets:
+      - name: private-registry
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 997
+        runAsGroup: 997
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+  openbao:
+    image:
+      repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-openbao
+      tag: v2.5.5-gitlab2-ubi
+    imagePullSecrets:
+    - name: private-registry
+  gitlab-zoekt:
+    indexer:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-zoekt
+        tag: v19.2.1-ubi
+    webserver:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-zoekt
+        tag: v19.2.1-ubi
+    gateway:
+      image:
+        repository: registry1.dso.mil/ironbank/opensource/nginx/nginx
+        tag: 1.31.5
+    imagePullSecrets:
+    - name: private-registry
+  upgradeCheck:
+    image:
+      repository: registry1.dso.mil/ironbank/redhat/ubi/ubi9
+      tag: "9.8"
+    securityContext:
+      # in alpine/debian/busybox based images, this is `nobody:nogroup`
+      # Allow to overwrite the specific security context under which the container is running.
+      runAsGroup: 65534
+    containerSecurityContext:
+      runAsGroup: 65534
+    annotations:
+      sidecar.istio.io/inject: "true"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 500Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+
+
+  ## Installation of certmananger.
+  ## This value replaces `certmanager.install` to allow certmanager schema validation to pass.
+  ## See requirements.yaml for current version
+  installCertmanager: false
+
+  # https://docs.gitlab.com/charts/charts/nginx/
+  # https://docs.gitlab.com/charts/architecture/decisions#nginx-ingress
+  # Installation & configuration of charts/ingress-nginx:
+  nginx-ingress:
+    enabled: false
+
+  ## Installation & configuration of stable/prometheus
+  ## See dependencies in Chart.yaml for current version
+  prometheus:
+    install: false
+
+  ## Installation & configuration charts/registry
+  ## https://docs.gitlab.com/charts/architecture/decisions#registry
+  ## https://docs.gitlab.com/charts/charts/registry/
+  registry:
+    enabled: true
+    init:
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+    resources:
+      limits:
+        cpu: 200m
+        memory: 1024Mi
+      requests:
+        cpu: 200m
+        memory: 1024Mi
+    image:
+      repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-container-registry
+      tag: v4.40.2-gitlab-ubi
+    ingress:
+      enabled: false # Local setting in subchart must be overridden
+    # The registry debug.addr.port is used for metrics. Default is 5001
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+    securityContext:
+      runAsGroup: 1000
+    containerSecurityContext:
+      runAsGroup: 1000
+  shared-secrets:
+    selfsign:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/cfssl-self-sign
+        tag: v19.3.2-ubi
+    serviceAccount:
+      automountServiceAccountToken: false
+    resources:
+      requests:
+        cpu: 300m
+        memory: 200Mi
+      limits:
+        cpu: 300m
+        memory: 200Mi
+    securityContext:
+      # in debian/alpine based images, this is `nobody:nogroup`
+      runAsGroup: 65534
+    annotations:
+      sidecar.istio.io/inject: "true"
+
+  ## Installation & configuration of gitlab/gitlab-runner
+  ## See dependencies in Chart.yaml for current version
+  gitlab-runner:
+    install: false
+
+  ## Settings for individual sub-charts under GitLab
+  ## Note: Many of these settings are configurable via globals
+  gitlab:
+    containerSecurityContext:
+      capabilities:
+        drop:
+        - ALL
+    init:
+      containerSecurityContext:
+        capabilities:
+          drop:
+          - ALL
+    certificates:
+      init:
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          runAsUser: 65534
+          runAsNonRoot: true
+    ## https://docs.gitlab.com/charts/charts/gitlab/toolbox
+    toolbox:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-toolbox-ee
+        tag: v19.3.2-ubi
+      init:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 200Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        requests:
+          cpu: 2
+          memory: 3.5Gi
+        limits:
+          cpu: 2
+          memory: 3.5Gi
+      annotations:
+        sidecar.istio.io/proxyMemory: 512Mi
+        sidecar.istio.io/proxyMemoryLimit: 512Mi
+      backups:
+        cron:
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+      containerSecurityContext:
+        runAsGroup: 1000
+      customScripts:
+        # this will be mounted into the toolbox container at `/scripts/custom/testing.rb`
+        # execute it in the toolbox with `gitlab-rails runner /scripts/custom/testing.rb`
+        #testing.rb: |
+        #  puts "testing"
+
+    gitlab-exporter:
+      enabled: false
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        limits:
+          cpu: 150m
+          memory: 200Mi
+        requests:
+          cpu: 150m
+          memory: 200Mi
+      capabilities:
+        drop:
+        - ALL
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-exporter
+        tag: 16.9.0-ubi
+      metrics:
+        serviceMonitor:
+          enabled: true
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+    migrations:
+      # istio sidecar injection for the migration job causes difficult errors. disable istio for this job
+      annotations:
+        sidecar.istio.io/inject: "true"
+      init:
+        resources:
+          limits:
+            cpu: 500m
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 768Mi
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1.5G
+        requests:
+          cpu: 500m
+          memory: 1.5G
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-toolbox-ee
+        tag: v19.3.2-ubi
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+    webservice:
+      extraEnv:
+        GITLAB_PRODUCT_USAGE_DATA_ENABLED: "false"
+      init:
+        resources:
+          # https://docs.gitlab.com/charts/charts/gitlab/webservice/index.html#memory-requestslimits
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+      resources:
+        # https://docs.gitlab.com/charts/charts/gitlab/webservice/index.html#memory-requestslimits
+        limits:
+          cpu: 1500m # match upstream
+          memory: 3G # match upstream
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-webservice-ee
+        tag: v19.3.2-ubi
+      workhorse:
+        resources:
+          # https://docs.gitlab.com/charts/charts/gitlab/webservice/index.html#memory-requestslimits
+          limits:
+            cpu: 600m
+            memory: 2.5G
+          requests:
+            cpu: 600m
+            memory: 2.5G
+        image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-workhorse-ee
+        tag: v19.3.2-ubi
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+      ingress:
+        enabled: false  # Local setting in subchart must be overridden
+      metrics:
+        serviceMonitor:
+          enabled: true
+      helmTests:
+        enabled: false
+    ## https://docs.gitlab.com/charts/charts/gitlab/sidekiq
+    sidekiq:
+      extraEnv:
+        GITLAB_PRODUCT_USAGE_DATA_ENABLED: "false"
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-sidekiq-ee
+        tag: v19.3.2-ubi
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        requests:
+          memory: 3G
+          cpu: 1500m
+        limits:
+          memory: 3G
+          cpu: 1500m
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+    gitaly:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly
+        tag: v19.3.2-ubi
+      cgroups:
+        initContainer:
+          image:
+            repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly-init-cgroups
+            tag: v19.3.2-ubi
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        requests:
+          cpu: 400m
+          memory: 600Mi
+        limits:
+          cpu: 400m
+          memory: 600Mi
+      metrics:
+        serviceMonitor:
+          enabled: true
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+    geo-logcursor:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-geo-logcursor
+        tag: v19.3.2-ubi
+    gitlab-shell:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-shell
+        tag: v14.56.1-ubi
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        limits:
+          cpu: 300m
+          memory: 300Mi
+        requests:
+          cpu: 300m
+          memory: 300Mi
+      securityContext:
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsGroup: 1000
+    mailroom:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-mailroom
+        tag: v19.3.2-ubi
+      containerSecurityContext:
+        capabilities:
+          drop:
+          - ALL
+
+    ## https://docs.gitlab.com/charts/charts/gitlab/gitlab-grafana
+    #   gitlab-grafana:
+    ## https://docs.gitlab.com/charts/charts/gitlab/gitlab-pages
+    gitlab-pages:
+      service:
+        customDomains:
+          type: ClusterIP
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-pages
+        tag: v19.3.2-ubi
+    kas:
+      ingress:
+        enabled: false # Local setting in subchart must be overridden
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-kas
+        tag: v19.3.2-ubi
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        requests:
+          cpu: 1
+          memory: 1Gi
+        limits:
+          cpu: 1
+          memory: 1Gi
+    praefect:
+      image:
+        repository: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly
+        tag: v19.3.2-ubi
+      init:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi
+      resources:
+        requests:
+          cpu: 1
+          memory: 1Gi
+        limits:
+          cpu: 1
+          memory: 1Gi
+# Big Bang Additions
+domain: dev.bigbang.mil
+# Used for Istio SSO serviceEntry
+
+openshift: false
+
+bbtests:
+  # -- Enable internal Big Bang package tests. This profile and any dependency
+  # configuration supplied by tests/test-values*.yaml are unsupported for
+  # consumer deployments.
+  enabled: false
+  cypress:
+    resources:
+      requests:
+        cpu: 1
+        memory: "2Gi"
+      limits:
+        cpu: 1
+        memory: "2Gi"
+    artifacts: true
+    envs:
+      cypress_url: http://gitlab-webservice-default:8181
+      cypress_gitlab_first_name: "test"
+      cypress_gitlab_last_name: "user"
+      cypress_gitlab_username: "testuser"
+      cypress_gitlab_password: "Password123h56a78"
+      cypress_gitlab_email: "testuser@example.com"
+      cypress_gitlab_project: "my-awesome-project"
+      cypress_keycloak_username: "cypress"
+      cypress_keycloak_password: "tnr_w!G33ZyAt@C8"
+    secretEnvs:
+    - name: cypress_adminpassword
+      valueFrom:
+        secretKeyRef:
+          name: gitlab-gitlab-initial-root-password
+          key: password
+  scripts:
+    image: "registry1.dso.mil/ironbank/big-bang/devops-tester:1.3"
+    additionalVolumes:
+    - name: docker-config
+      secret:
+        secretName: private-registry
+        items:
+        - key: .dockerconfigjson
+          path: auth.json
+    additionalVolumeMounts:
+    - name: docker-config
+      mountPath: /.docker/
+    envs:
+      GITLAB_USER: "root"
+      GITLAB_EMAIL: "gitlab-root-user@example.com"
+      GITLAB_HOST: gitlab-webservice-default.gitlab.svc.cluster.local:8181
+      GITLAB_PROJECT: "bigbang-test-project-2"
+      GITLAB_REGISTRY: gitlab-registry-test-svc.gitlab.svc.cluster.local:80
+      GITLAB_REPOSITORY: http://gitlab-webservice-default.gitlab.svc.cluster.local:8181

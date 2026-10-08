@@ -1,0 +1,7 @@
+GitLab 19 no longer includes PostgreSQL, Redis, or MinIO. This chart does not
+deploy replacements or migrate their data. Configure externally managed
+PostgreSQL 17, a supported Redis or Valkey release, and GitLab-supported
+external object storage before installing or upgrading GitLab.
+
+Existing users of bundled services must complete the staged migration on GitLab
+18.11 before upgrading to chart 10. See docs/gitlab-19-upgrade.md.

@@ -1,0 +1,114 @@
+# Dev wiring for the external services gitlab 10.x requires (the CI dependency
+# stack: postgres/garage/valkey containers on the k3d network — see
+# pipeline-templates ci/dependencies/manage.sh). Mirrors the umbrella's
+# secret/values wiring for addons.gitlab.database/redis/objectStorage.
+bigbangPackage:
+  networkPolicies:
+    egress:
+      from:
+        "*":
+          to:
+            definition:
+              kubeAPI: true
+            # postgres/valkey/garage containers on the k3d docker network
+            cidr:
+              172.28.0.0/16:5432: true
+              172.28.0.0/16:6379: true
+              172.28.0.0/16:3900: true
+
+global:
+  minio:
+    enabled: false
+  psql:
+    host: postgresql
+    port: 5432
+    database: gitlabhq_production
+    username: ci
+    password:
+      secret: gitlab-database
+      key: PGPASSWORD
+  redis:
+    host: valkey
+    port: 6379
+    auth:
+      enabled: true
+      secret: gitlab-redis-secret-bb
+      key: secret
+  registry:
+    bucket: ci-gitlab-registry
+  appConfig:
+    lfs:
+      bucket: ci-gitlab-lfs
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    artifacts:
+      bucket: ci-gitlab-artifacts
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    uploads:
+      bucket: ci-gitlab-uploads
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    packages:
+      bucket: ci-gitlab-packages
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    externalDiffs:
+      bucket: ci-gitlab-mr-diffs
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    terraformState:
+      bucket: ci-gitlab-terraform-state
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    dependencyProxy:
+      enabled: true
+      bucket: ci-gitlab-dependency-proxy
+      connection:
+        secret: gitlab-object-storage
+        key: rails
+    backups:
+      bucket: ci-gitlab-backup
+      tmpBucket: ci-gitlab-backup-tmp
+
+upstream:
+  registry:
+    storage:
+      secret: gitlab-object-storage
+      key: registry
+      redirect:
+        disable: true
+    hpa:
+      minReplicas: 1
+      maxReplicas: 1
+  gitlab:
+    webservice:
+      minReplicas: 1
+      maxReplicas: 1
+      resources:
+        limits:
+          memory: 5Gi
+    sidekiq:
+      minReplicas: 1
+      maxReplicas: 1
+    gitlab-shell:
+      minReplicas: 1
+      maxReplicas: 1
+    gitaly:
+      persistence:
+        size: 1Gi
+    toolbox:
+      backups:
+        objectStorage:
+          backend: s3
+          config:
+            secret: gitlab-object-storage
+            key: backups
+      persistence:
+        size: 256Mi
