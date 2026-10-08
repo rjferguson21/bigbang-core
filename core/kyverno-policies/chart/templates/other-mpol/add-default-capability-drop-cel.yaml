@@ -1,0 +1,123 @@
+{{- $name := "add-default-capability-drop-cel" }}
+{{- if and .Values.enabled (dig $name "enabled" false .Values.celPoliciesBeta) }}
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: {{ $name }}
+  annotations:
+    policies.kyverno.io/title: Add Default Capability Drop
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: {{ default "medium" (dig $name "severity" nil .Values.celPoliciesBeta) }}
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/minversion: 1.17.0
+    policies.kyverno.io/description: >-
+      This policy mutates all containers in pods to drop `ALL` capabilities by default.
+    policies.bigbang.dev/lifecycle: beta
+  labels: {{- include "kyverno-policies.labels" . | nindent 4 }}
+spec:
+  failurePolicy: {{ include "bb-kyverno-policies.mpol-failurePolicy" (merge (dict "name" $name) .) }}
+  {{- include "bb-kyverno-policies.cel-webhookTimeoutSeconds" (merge (dict "name" $name) .) | indent 2 }}
+  {{- include "bb-kyverno-policies.cel-autogenControllers" (merge (dict "name" $name) .) | indent 2 }}
+  evaluation:
+    background:
+      enabled: {{ include "bb-kyverno-policies.cel-background" (merge (dict "name" $name) .) }}
+  {{- if dig $name "matchConstraints" nil .Values.celPoliciesBeta }}
+  matchConstraints:
+    {{- toYaml (dig $name "matchConstraints" nil .Values.celPoliciesBeta) | nindent 4 }}
+  {{- else }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE", "UPDATE"]
+        resources:   ["pods"]
+  {{- end }}
+  {{- $nsExclude := include "bb-kyverno-policies.cel-excludeNamespaces" (merge (dict "name" $name) .) }}
+  {{- $userConditions := dig $name "matchConditions" nil .Values.celPoliciesBeta }}
+  {{- if or $nsExclude $userConditions }}
+  matchConditions:
+    {{- if $nsExclude }}
+    {{- $nsExclude | nindent 4 }}
+    {{- end }}
+    {{- with $userConditions }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |
+          object.spec.containers.map(c,
+            !c.?securityContext.?capabilities.?drop.orValue([]).exists(d, d == "ALL") ?
+              (has(c.securityContext) && has(c.securityContext.capabilities) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/containers/" + string(object.spec.containers.indexOf(c)) + "/securityContext/capabilities/drop",
+                  value: ["ALL"]
+                }
+              : has(c.securityContext) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/containers/" + string(object.spec.containers.indexOf(c)) + "/securityContext/capabilities",
+                  value: {"drop": ["ALL"]}
+                }
+              : JSONPatch{
+                  op: "add",
+                  path: "/spec/containers/" + string(object.spec.containers.indexOf(c)) + "/securityContext",
+                  value: {"capabilities": {"drop": ["ALL"]}}
+                })
+            : null
+          ).filter(p, p != null)
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |
+          has(object.spec.initContainers) ?
+          object.spec.initContainers.map(c,
+            !c.?securityContext.?capabilities.?drop.orValue([]).exists(d, d == "ALL") ?
+              (has(c.securityContext) && has(c.securityContext.capabilities) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/initContainers/" + string(object.spec.initContainers.indexOf(c)) + "/securityContext/capabilities/drop",
+                  value: ["ALL"]
+                }
+              : has(c.securityContext) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/initContainers/" + string(object.spec.initContainers.indexOf(c)) + "/securityContext/capabilities",
+                  value: {"drop": ["ALL"]}
+                }
+              : JSONPatch{
+                  op: "add",
+                  path: "/spec/initContainers/" + string(object.spec.initContainers.indexOf(c)) + "/securityContext",
+                  value: {"capabilities": {"drop": ["ALL"]}}
+                })
+            : null
+          ).filter(p, p != null)
+          : []
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |
+          has(object.spec.ephemeralContainers) ?
+          object.spec.ephemeralContainers.map(c,
+            !c.?securityContext.?capabilities.?drop.orValue([]).exists(d, d == "ALL") ?
+              (has(c.securityContext) && has(c.securityContext.capabilities) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/ephemeralContainers/" + string(object.spec.ephemeralContainers.indexOf(c)) + "/securityContext/capabilities/drop",
+                  value: ["ALL"]
+                }
+              : has(c.securityContext) ?
+                JSONPatch{
+                  op: "add",
+                  path: "/spec/ephemeralContainers/" + string(object.spec.ephemeralContainers.indexOf(c)) + "/securityContext/capabilities",
+                  value: {"drop": ["ALL"]}
+                }
+              : JSONPatch{
+                  op: "add",
+                  path: "/spec/ephemeralContainers/" + string(object.spec.ephemeralContainers.indexOf(c)) + "/securityContext",
+                  value: {"capabilities": {"drop": ["ALL"]}}
+                })
+            : null
+          ).filter(p, p != null)
+          : []
+{{- end -}}

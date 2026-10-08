@@ -1,0 +1,17 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: update-automountserviceaccounttokens-cel-serviceaccounts
+policies:
+- ../policy.yaml
+resources:
+- resource.yaml
+results:
+- policy: update-automountserviceaccounttokens-cel-serviceaccounts
+  rule: mutate
+  resources:
+  - update-token-automount-2
+  - update-token-automount-wild-1
+  - update-token-automount-ignored
+  kind: ServiceAccount
+  result: pass
