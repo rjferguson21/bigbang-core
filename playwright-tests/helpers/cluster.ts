@@ -56,6 +56,7 @@ export function discover(): void {
     // Fresh consoles use the generated bootstrap password; once the reset
     // modal has run, the spec's fallback password takes over.
     NEUVECTOR_PASSWORD: () => secret('neuvector', 'neuvector-bootstrap-secret', 'bootstrapPassword'),
+    GITLAB_ADMIN_PASSWORD: () => secret('gitlab', 'gitlab-gitlab-initial-root-password', 'password'),
   };
 
   for (const [name, lookup] of Object.entries(defaults)) {

@@ -81,6 +81,13 @@ packages:
     # when the namespace is injection-enabled
     namespaceLabels:
       istio-injection: enabled
+    values:
+      # deterministic LB IP (first of the MetalLB pool the Taskfile pins) so
+      # CoreDNS hostAliases and /etc/hosts entries stay valid across recreates
+      upstream:
+        service:
+          annotations:
+            metallb.io/loadBalancerIPs: 172.28.240.0
   kyverno:
     enabled: true
     releaseName: kyverno-kyverno
