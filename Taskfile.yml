@@ -31,6 +31,10 @@ vars:
   # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
   # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
   K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
+  # Local umbrella checkout — source of the dev gateway TLS cert
+  BIGBANG_REPO: /home/rob/bb/bigbang
+  # pipeline-templates checkout — provides the CI dependency stack (gitlab:deps)
+  PIPELINE_TEMPLATES_REPO: /home/rob/bb/pipeline-templates
 
 tasks:
   default:
@@ -62,9 +66,17 @@ tasks:
           --set k3d.serverIP=0.0.0.0 \
           --set k3d.metricsServer=true \
           --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
+          --set k3d.hostAliases.public.ip=172.28.240.0 \
+          --set k3d.hostAliases.passthrough.ip=172.28.240.1 \
           --set registry1.username=$REGISTRY1_USERNAME \
           --set registry1.password=$REGISTRY1_PASSWORD \
           > k3d/.rendered/bootstrap.yaml
+        # bb-k3d 0.3.5 gaps: its MetalLB pool (172.28.0.2-.5) collides with the
+        # k3d node container IPs and it ships no L2Advertisement, so LB IPs are
+        # never reachable. Move the pool clear of docker's assignments and add
+        # the advertisement until the chart fixes both.
+        yq -i '(select(.kind == "IPAddressPool") | .spec.addresses) = ["172.28.240.0-172.28.240.15"]' k3d/.rendered/bootstrap.yaml
+        printf '%s\n' '---' 'apiVersion: metallb.io/v1beta1' 'kind: L2Advertisement' 'metadata:' '  name: default' '  namespace: metallb-system' 'spec:' '  ipAddressPools:' '  - default' >> k3d/.rendered/bootstrap.yaml
         yq 'select(.kind == "Simple")' k3d/.rendered/bootstrap.yaml > k3d/.rendered/k3d.yaml
       - k3d cluster create --config k3d/.rendered/k3d.yaml
       # Wait for the bootstrapped Flux controllers (installed by the k3s
@@ -122,6 +134,62 @@ tasks:
     desc: Remove the local dev gitea container
     cmds:
       - docker rm -f gitea 2>/dev/null || true
+
+  gitlab:deps:
+    desc: "Stand up gitlab's external services (postgres/garage/valkey on the cluster network, via the CI dependency stack) and create the connection secrets the umbrella normally renders"
+    cmds:
+      - |
+        CI_DEPENDENCY_NETWORK=k3d-{{.CLUSTER}} K3D_DOCKER_SUBNET=172.28.250.0/24 \
+        CI_POSTGRES_DATABASES=gitlabhq_production \
+        CI_GARAGE_BUCKETS=ci-gitlab-registry,ci-gitlab-lfs,ci-gitlab-artifacts,ci-gitlab-uploads,ci-gitlab-packages,ci-gitlab-mr-diffs,ci-gitlab-terraform-state,ci-gitlab-dependency-proxy,ci-gitlab-pseudo,ci-gitlab-backup,ci-gitlab-backup-tmp \
+        {{.PIPELINE_TEMPLATES_REPO}}/ci/dependencies/manage.sh up
+      - kubectl --context {{.CTX}} create namespace gitlab --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - kubectl --context {{.CTX}} -n gitlab create secret generic gitlab-database --from-literal=PGPASSWORD=ci-only-password --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - kubectl --context {{.CTX}} -n gitlab create secret generic gitlab-redis-secret-bb --from-literal=secret=ci-only-password --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - |
+        kubectl --context {{.CTX}} apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: gitlab-object-storage
+          namespace: gitlab
+        type: kubernetes.io/opaque
+        stringData:
+          rails: |-
+            provider: AWS
+            region: garage
+            aws_access_key_id: GKbb0000000000000000000000
+            aws_secret_access_key: bb00000000000000000000000000000000000000000000000000000000000000
+            endpoint: "http://garage:3900"
+            aws_signature_version: 4
+            path_style: true
+          registry: |-
+            s3:
+              bucket: ci-gitlab-registry
+              accesskey: GKbb0000000000000000000000
+              secretkey: bb00000000000000000000000000000000000000000000000000000000000000
+              regionendpoint: "http://garage:3900"
+              secure: false
+              region: garage
+              v4auth: true
+              pathstyle: true
+          backups: |-
+            [default]
+            access_key = GKbb0000000000000000000000
+            secret_key = bb00000000000000000000000000000000000000000000000000000000000000
+            host_base = garage:3900
+            host_bucket = garage:3900
+            use_https = False
+            bucket_location = garage
+            multipart_chunk_size_mb = 128
+        EOF
+
+  gitlab:deploy:
+    desc: "Deploy the gitlab package (release name matches the umbrella's; run gitlab:deps first on a fresh cluster)"
+    cmds:
+      - task: gitlab:deps
+      - task: package:deploy
+        vars: { PKG: gitlab, RELEASE: gitlab, NS: gitlab, PKGDIR: packages, EXTRA: "--timeout 30m" }
 
   registry:secret:
     desc: Create the private-registry pull secret in NS (from REGISTRY1_* env, or copied from the bb-helm cluster)
@@ -182,6 +250,19 @@ tasks:
       # No REPO_URL given → seed the local gitea with the working tree and use it
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
+      # Gateway TLS: the public dev wildcard cert for *.dev.bigbang.mil (the
+      # same one the umbrella ships in chart/ingress-certs.yaml); the gateway
+      # servers reference credentialName public-cert
+      - |
+        certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
+        if [ -f "$certs" ] && ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
+          kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+          tmp=$(mktemp -d)
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+          kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
+          rm -rf "$tmp"
+        fi
       # Apply the GitRepository + parent HelmRelease; the parent renders the
       # child HelmReleases, which helm-controller reconciles in dependsOn order.
       - |
