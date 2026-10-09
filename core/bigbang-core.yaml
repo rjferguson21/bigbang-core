@@ -43,3 +43,10 @@ spec:
       sourceRef:
         kind: GitRepository
         name: bigbang-core
+  # Optional overrides for the core chart (e.g. a minimal package profile);
+  # core:deploy populates this ConfigMap from ${CORE_VALUES} when set and
+  # removes it otherwise.
+  valuesFrom:
+    - kind: ConfigMap
+      name: bigbang-core-values
+      optional: true

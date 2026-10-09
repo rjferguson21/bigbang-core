@@ -239,11 +239,23 @@ tasks:
     vars:
       # explicit REPO_URL wins; otherwise fall back to the local dev gitea
       SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
+      # optional overrides file for the core chart (e.g. dev/values/core-minimal.yaml)
+      CORE_VALUES: '{{.CORE_VALUES | default ""}}'
     cmds:
       - task: core:flux
       # Namespace for the GitRepository + HelmReleases (the controllers may
       # run elsewhere; they watch all namespaces)
       - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      # Core chart overrides: the parent HelmRelease reads the optional
+      # bigbang-core-values ConfigMap; populate it from CORE_VALUES or remove
+      # it so a previous profile doesn't linger
+      - |
+        if [ -n "{{.CORE_VALUES}}" ]; then
+          kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} create configmap bigbang-core-values \
+            --from-file=values.yaml={{.CORE_VALUES}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+        else
+          kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} delete configmap bigbang-core-values --ignore-not-found
+        fi
       # No REPO_URL given → seed the local gitea with the working tree and use it
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
@@ -270,8 +282,13 @@ tasks:
       # at t=0). Poll until every enabled package's HelmRelease reports Ready.
       - |
         ns={{.FLUX_NAMESPACE}}
-        # count the child releases the chart renders (exclude the parent)
-        expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
+        # count the child releases the chart renders (exclude the parent),
+        # honoring the CORE_VALUES overlay when one is in play
+        if [ -n "{{.CORE_VALUES}}" ]; then
+          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml "{{.CORE_VALUES}}")
+        else
+          expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
+        fi
         echo "waiting for $expected core HelmReleases to be Ready..."
         deadline=$(( $(date +%s) + 900 ))
         while :; do

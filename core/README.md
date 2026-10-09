@@ -59,6 +59,11 @@ REPO_URL=… TARGET_REVISION=main FLUX_NAMESPACE=flux-system \
   envsubst < core/bigbang-core.yaml | kubectl apply -f -
 ```
 
+For single-package testing, deploy just the operator + CRDs + istio with
+`task core:deploy CORE_VALUES=dev/values/core-minimal.yaml` (the parent
+HelmRelease reads overrides from the optional `bigbang-core-values`
+ConfigMap), then `task package:deploy PKG=<name> ...`.
+
 Disable a package with `packages.kyverno-reporter.enabled=false` (via the
 parent HelmRelease's `spec.values`).
 
