@@ -66,17 +66,9 @@ tasks:
           --set k3d.serverIP=0.0.0.0 \
           --set k3d.metricsServer=true \
           --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
-          --set k3d.hostAliases.public.ip=172.28.240.0 \
-          --set k3d.hostAliases.passthrough.ip=172.28.240.1 \
           --set registry1.username=$REGISTRY1_USERNAME \
           --set registry1.password=$REGISTRY1_PASSWORD \
           > k3d/.rendered/bootstrap.yaml
-        # bb-k3d 0.3.5 gaps: its MetalLB pool (172.28.0.2-.5) collides with the
-        # k3d node container IPs and it ships no L2Advertisement, so LB IPs are
-        # never reachable. Move the pool clear of docker's assignments and add
-        # the advertisement until the chart fixes both.
-        yq -i '(select(.kind == "IPAddressPool") | .spec.addresses) = ["172.28.240.0-172.28.240.15"]' k3d/.rendered/bootstrap.yaml
-        printf '%s\n' '---' 'apiVersion: metallb.io/v1beta1' 'kind: L2Advertisement' 'metadata:' '  name: default' '  namespace: metallb-system' 'spec:' '  ipAddressPools:' '  - default' >> k3d/.rendered/bootstrap.yaml
         yq 'select(.kind == "Simple")' k3d/.rendered/bootstrap.yaml > k3d/.rendered/k3d.yaml
       - k3d cluster create --config k3d/.rendered/k3d.yaml
       # Wait for the bootstrapped Flux controllers (installed by the k3s

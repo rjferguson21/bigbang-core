@@ -82,12 +82,15 @@ packages:
     namespaceLabels:
       istio-injection: enabled
     values:
-      # deterministic LB IP (first of the MetalLB pool the Taskfile pins) so
-      # CoreDNS hostAliases and /etc/hosts entries stay valid across recreates
+      # Pin to the IP the bb-k3d hostAliases and dev /etc/hosts entries expect
+      # (same pattern as the packages' dev-values). It is agent-0's docker IP:
+      # traffic from the host reaches the node directly and kube-proxy DNATs
+      # the LB ingress IP to the gateway pod — no MetalLB announcement needed.
+      # 172.28.0.4 is reserved for the passthrough gateway.
       upstream:
         service:
           annotations:
-            metallb.io/loadBalancerIPs: 172.28.240.0
+            metallb.io/loadBalancerIPs: 172.28.0.3
   kyverno:
     enabled: true
     releaseName: kyverno-kyverno
