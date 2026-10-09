@@ -127,6 +127,11 @@ tasks:
     cmds:
       - docker rm -f gitea 2>/dev/null || true
 
+  gitlab:deps:reset:
+    desc: "Wipe the dependency stack's data volumes. REQUIRED after a cluster recreate: gitlab's rails encryption keys are regenerated with the cluster, so a database from a previous cluster fails with OpenSSL::Cipher::CipherError"
+    cmds:
+      - CI_DEPENDENCY_NETWORK=k3d-{{.CLUSTER}} {{.PIPELINE_TEMPLATES_REPO}}/ci/dependencies/manage.sh reset
+
   gitlab:deps:
     desc: "Stand up gitlab's external services (postgres/garage/valkey on the cluster network, via the CI dependency stack) and create the connection secrets the umbrella normally renders"
     cmds:
