@@ -49,6 +49,63 @@ packages:
     namespace: bigbang-operator
     chart: core/bigbang-operator/chart
     wave: 0
+    values:
+      # Shared egress/ingress definitions every Package can reference via
+      # networkPolicies.*.definition.<name> (defined once here instead of
+      # per-package; package-local definitions still override).
+      globalConfig:
+        create: true
+        # Shapes match the umbrella's global networkPolicies.*.definitions
+        # defaults; narrow the CIDRs per environment as needed.
+        egressDefinitions:
+          # CIDRs the SSO provider is served on
+          sso:
+            to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+          # Object storage endpoints (S3 etc.)
+          storage-subnets:
+            to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+            ports:
+            - port: 443
+              protocol: TCP
+          # Externally managed Redis/Valkey/Sentinel endpoints
+          redis-subnets:
+            to:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
+            ports:
+            - port: 6379
+              protocol: TCP
+          # Externally managed PostgreSQL endpoints
+          database-subnets:
+            to:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
+            ports:
+            - port: 5432
+              protocol: TCP
+        ingressDefinitions:
+          # Subnets where load balancer traffic originates; referenced by the
+          # istio-gateway package for its web-port ingress
+          load-balancer-subnets:
+            from:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
   # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring,
   # kyverno-reporter, alloy.
   prometheus-operator-crds:

@@ -25,17 +25,9 @@ bigbangPackage:
     # The umbrella injects these per-gateway (bigbang.istio-gateway.ingress-netpol-spec):
     # inbound web traffic from the LB subnets, and egress to any pod so the
     # gateway can reach routed app services. Without them the default-deny set
-    # blocks all traffic through the gateway.
+    # blocks all traffic through the gateway. load-balancer-subnets resolves
+    # from the operator's shared definitions (bigbang-operator-global).
     ingress:
-      definitions:
-        load-balancer-subnets:
-          from:
-          - ipBlock:
-              cidr: 192.168.0.0/16
-          - ipBlock:
-              cidr: 172.16.0.0/12
-          - ipBlock:
-              cidr: 10.0.0.0/8
       to:
         public-ingressgateway:[8080,8443]:
           from:

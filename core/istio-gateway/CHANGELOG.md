@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.30.4-bb.3] (2026-10-09)
+
+### Changed
+
+- load-balancer-subnets ingress definition now resolves from the operator's shared global config instead of a package-local copy
+
 ## [1.30.4-bb.2] (2026-10-08)
 
 ### Fixed

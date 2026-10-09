@@ -114,12 +114,68 @@ bigbangPackage:
           from:
             k8s:
               monitoring-monitoring-kube-prometheus@monitoring/prometheus: true
+    # sso/database-subnets/redis-subnets/storage-subnets resolve from the
+    # operator's shared definitions (bigbang-operator-global). The umbrella
+    # only grants database/redis egress to webservice and migrations; gitlab
+    # with the now-required external services needs them on every rails
+    # component, so sidekiq/toolbox/gitlab-exporter get them here too.
     egress:
       from:
         "*":
           to:
             definition:
               kubeAPI: true
+        webservice:
+          podSelector:
+            matchLabels:
+              app: webservice
+          to:
+            definition:
+              sso: true
+              database-subnets: true
+              redis-subnets: true
+              storage-subnets: true
+        sidekiq:
+          podSelector:
+            matchLabels:
+              app: sidekiq
+          to:
+            definition:
+              database-subnets: true
+              redis-subnets: true
+              storage-subnets: true
+        migrations:
+          podSelector:
+            matchLabels:
+              app: migrations
+          to:
+            definition:
+              database-subnets: true
+              redis-subnets: true
+        toolbox:
+          podSelector:
+            matchLabels:
+              app: toolbox
+          to:
+            definition:
+              database-subnets: true
+              redis-subnets: true
+              storage-subnets: true
+        gitlab-exporter:
+          podSelector:
+            matchLabels:
+              app: gitlab-exporter
+          to:
+            definition:
+              database-subnets: true
+              redis-subnets: true
+        registry:
+          podSelector:
+            matchLabels:
+              app: registry
+          to:
+            definition:
+              storage-subnets: true
 
 ## NOTICE
 #
