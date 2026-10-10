@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  core-minimal:
+    name: k3d cluster + core-minimal + kiali (upstream images)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      # Taskfile vars: the Big Bang dev registry cache dir doesn't exist on
+      # the runner, so point the bb-k3d volume mounts at the workspace.
+      K3D_VOLUME_DIR: ${{ github.workspace }}/.k3d
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+
+      - name: Install k3d
+        run: |
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      # package:deploy uses `helm upgrade --force-conflicts`, a Helm 4
+      # (server-side apply) flag; the runner image ships Helm 3.
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Tool versions
+        run: |
+          docker version --format '{{.Server.Version}}'
+          helm version --short
+          kubectl version --client
+          yq --version
+
+      # cluster:recreate (bb-k3d with its values-public.yaml, no registry1
+      # creds) + core:deploy with the core-minimal and upstream-images
+      # overlays, sourced from a local gitea seeded with the checkout, then
+      # the kiali package with dev/values/upstream/kiali.yaml.
+      - name: Create cluster, deploy core-minimal and kiali
+        run: task ci K3D_VOLUME_DIR="$K3D_VOLUME_DIR"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: playwright-tests/package-lock.json
+
+      - name: Install Playwright
+        run: task playwright:install WITH_DEPS=true
+
+      # Hosts under *.dev.bigbang.mil resolve to the gateway LB IP, which the
+      # suite discovers from the kubectl context (helpers/cluster.ts).
+      - name: Kiali playwright tests
+        run: task playwright:test SPEC=tests/kiali.spec.ts
+
+      - name: Upload playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: playwright-tests/test-results/
+          if-no-files-found: ignore
+
+      - name: Cluster state
+        if: always()
+        run: |
+          echo "=== Nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== HelmReleases ==="
+          kubectl get helmreleases -A || true
+          echo "=== Packages ==="
+          kubectl get packages -A || true
+          echo "=== Pods ==="
+          kubectl get pods -A -o wide || true
+
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          echo "=== HelmRelease conditions ==="
+          kubectl get helmreleases -A -o yaml | yq '.items[] | {"name": .metadata.name, "conditions": .status.conditions}' || true
+          echo "=== Non-running pods ==="
+          kubectl get pods -A --no-headers | grep -vE "Running|Completed" || true
+          for p in $(kubectl get pods -A --no-headers | grep -vE "Running|Completed" | awk '{print $1"/"$2}'); do
+            ns=${p%%/*}; name=${p##*/}
+            echo "--- describe $p"; kubectl -n "$ns" describe pod "$name" | tail -40 || true
+            echo "--- logs $p"; kubectl -n "$ns" logs "$name" --all-containers --tail=50 || true
+          done
+          echo "=== Warning events ==="
+          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60 || true
+          echo "=== Flux controller logs ==="
+          ns=$(kubectl get deploy -A -l app.kubernetes.io/part-of=flux -o jsonpath='{.items[0].metadata.namespace}')
+          kubectl -n "$ns" logs deploy/helm-controller --tail=100 || true
+          kubectl -n "$ns" logs deploy/source-controller --tail=50 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          task gitea:down || true
+          task cluster:delete || true

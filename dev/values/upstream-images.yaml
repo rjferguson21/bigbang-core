@@ -1,0 +1,32 @@
+# Upstream (public) image overlay for the core-minimal profile — for CI and
+# other environments without registry1.dso.mil credentials. Compose with
+# core-minimal:
+#
+#   task core:deploy CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
+#
+# Istio only publishes to docker.io/istio (gcr.io/istio-release and
+# registry.istio.io/release retire in late 2026). mirror.gcr.io is Google's
+# public pull-through cache of Docker Hub: same digests as docker.io/istio,
+# no auth, and not subject to Docker Hub's anonymous pull limits.
+#
+# Only the core-minimal set is covered: bigbang-operator already defaults to
+# its public GHCR image, istio-crds and prometheus-operator-crds ship no
+# images, and the istio-gateway pod's image is "auto" (istiod's injector
+# rewrites it from the hub below). The full profile (kyverno, monitoring,
+# loki, grafana, alloy) still pulls from registry1.
+packages:
+  istiod:
+    values:
+      upstream:
+        global:
+          hub: mirror.gcr.io/istio
+  istio-gateway:
+    values:
+      # The gluon post-install wait job (a helm hook, so the HelmRelease is
+      # not Ready until it completes) defaults to the Iron Bank kubectl
+      # image. alpine/k8s ships the bash + kubectl its script needs. Keep
+      # the tag on the cluster's kubernetes minor (bb-k3d k3s image).
+      waitJob:
+        image: mirror.gcr.io/alpine/k8s:1.33.3
+        # no private-registry pull secret exists on a public-image cluster
+        enableImagePullSecrets: false

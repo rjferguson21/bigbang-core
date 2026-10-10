@@ -34,6 +34,7 @@ export interface Env {
   TWISTLOCK_LICENSE_TEST: boolean;
   EXPECT_LOGS: boolean;
   CHECK_DATASOURCE: boolean;
+  CHECK_DATA: boolean;
   KEYCLOAK_TEST_ENABLE: boolean;
 
   // Credentials
@@ -82,6 +83,7 @@ const env: Env = {
   TWISTLOCK_LICENSE_TEST: bool('TWISTLOCK_LICENSE_TEST'),
   EXPECT_LOGS: bool('EXPECT_LOGS'),
   CHECK_DATASOURCE: bool('CHECK_DATASOURCE'),
+  CHECK_DATA: bool('CHECK_DATA'), // checks that need the monitoring stack (kiali's cypress check_data)
   KEYCLOAK_TEST_ENABLE: bool('KEYCLOAK_TEST_ENABLE'),
 
   // Credentials (defaults match the old cypress envs)

@@ -9,9 +9,15 @@ version: "3"
 #   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
+#   task ci                         # CI profile: cluster without registry1 creds + core-minimal on upstream images
 #
 # With no REPO_URL, core:deploy/up auto-run gitea:up (a local gitea on the
 # cluster network seeded from the working tree) and deploy from it.
+#
+# UPSTREAM_IMAGES=true drops the registry1 requirement: the cluster renders
+# with bb-k3d's values-public.yaml (public Flux/MetalLB images) and core
+# should be deployed with dev/values/upstream-images.yaml in CORE_VALUES
+# (istio from mirror.gcr.io, Google's public cache of docker.io).
 
 vars:
   CLUSTER: bb-helm
@@ -28,11 +34,15 @@ vars:
   # The bbtask bb-k3d chart: renders the k3d Simple config plus the bootstrap
   # manifests (MetalLB + Flux) that k3d injects into the k3s server.
   BB_K3D_CHART: oci://ghcr.io/rjferguson21/bb-k3d:0.3.5
+  # true = no registry1 creds; render bb-k3d with its public-image values
+  UPSTREAM_IMAGES: '{{.UPSTREAM_IMAGES | default "false"}}'
   # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
   # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
   K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
-  # Local umbrella checkout — source of the dev gateway TLS cert
+  # Local umbrella checkout — source of the dev gateway TLS cert; when it is
+  # absent the cert is downloaded from the umbrella repo instead
   BIGBANG_REPO: /home/rob/bb/bigbang
+  BIGBANG_CERTS_URL: https://repo1.dso.mil/big-bang/bigbang/-/raw/master/chart/ingress-certs.yaml
   # pipeline-templates checkout — provides the CI dependency stack (gitlab:deps)
   PIPELINE_TEMPLATES_REPO: /home/rob/bb/pipeline-templates
 
@@ -52,17 +62,21 @@ tasks:
   cluster:recreate:
     desc: "(Re)create the dev k3d cluster from the bb-k3d chart (MetalLB + Flux bootstrap, registry1 pull-through cache)."
     preconditions:
-      - sh: test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"
-        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds)"
+      - sh: test "{{.UPSTREAM_IMAGES}}" = "true" || { test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"; }
+        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds), or pass UPSTREAM_IMAGES=true"
     cmds:
       - k3d cluster delete {{.CLUSTER}} 2>/dev/null || true
       - k3d registry delete repo1 2>/dev/null || true
-      # Render the chart; k3d resolves the injected bootstrap.yaml relative to
-      # the config file, so both land in k3d/.rendered/
+      # Pull the chart locally (its values-public.yaml is only reachable from
+      # an unpacked copy), then render; k3d resolves the injected
+      # bootstrap.yaml relative to the config file, so both land in k3d/.rendered/
       - |
         mkdir -p k3d/.rendered {{.K3D_VOLUME_DIR}}/cypress
         echo "*" > k3d/.rendered/.gitignore
-        helm template k3d {{.BB_K3D_CHART}} \
+        rm -rf k3d/.rendered/chart
+        helm pull {{.BB_K3D_CHART}} --untar --untardir k3d/.rendered/chart
+        helm template k3d k3d/.rendered/chart/bb-k3d \
+          {{if eq .UPSTREAM_IMAGES "true"}}-f k3d/.rendered/chart/bb-k3d/values-public.yaml{{end}} \
           --set k3d.serverIP=0.0.0.0 \
           --set k3d.metricsServer=true \
           --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
@@ -205,7 +219,7 @@ tasks:
         fi
 
   package:deploy:
-    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]"
+    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]. Adds dev/values/<PKG>.yaml if present, plus dev/values/upstream/<PKG>.yaml when UPSTREAM_IMAGES=true"
     requires:
       vars: [PKG, RELEASE, NS]
     vars:
@@ -221,6 +235,7 @@ tasks:
         --set bigbangPackage.networkPolicies.enabled=true
         {{if .EXTRA}}{{.EXTRA}}{{end}}
         $(test -f dev/values/{{.PKG}}.yaml && echo "-f dev/values/{{.PKG}}.yaml")
+        $(test "{{.UPSTREAM_IMAGES}}" = "true" && test -f dev/values/upstream/{{.PKG}}.yaml && echo "-f dev/values/upstream/{{.PKG}}.yaml")
         {{if eq .IGNORE_ERROR "true"}}|| true{{end}}
 
   core:flux:
@@ -239,34 +254,46 @@ tasks:
     vars:
       # explicit REPO_URL wins; otherwise fall back to the local dev gitea
       SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
-      # optional overrides file for the core chart (e.g. dev/values/core-minimal.yaml)
+      # optional overrides for the core chart: one file or a comma-separated
+      # list merged in order (e.g. dev/values/core-minimal.yaml,dev/values/upstream-images.yaml)
       CORE_VALUES: '{{.CORE_VALUES | default ""}}'
+      # the merged overlay the ConfigMap and the readiness count are built from
+      CORE_VALUES_FILE: k3d/.rendered/core-values.yaml
     cmds:
       - task: core:flux
       # Namespace for the GitRepository + HelmReleases (the controllers may
       # run elsewhere; they watch all namespaces)
       - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
       # Core chart overrides: the parent HelmRelease reads the optional
-      # bigbang-core-values ConfigMap; populate it from CORE_VALUES or remove
-      # it so a previous profile doesn't linger
+      # bigbang-core-values ConfigMap; populate it from CORE_VALUES (merged
+      # with yq when several files are given) or remove it so a previous
+      # profile doesn't linger
       - |
         if [ -n "{{.CORE_VALUES}}" ]; then
+          mkdir -p k3d/.rendered && echo "*" > k3d/.rendered/.gitignore
+          yq eval-all '. as $item ireduce ({}; . * $item)' $(echo "{{.CORE_VALUES}}" | tr ',' ' ') > {{.CORE_VALUES_FILE}}
           kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} create configmap bigbang-core-values \
-            --from-file=values.yaml={{.CORE_VALUES}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+            --from-file=values.yaml={{.CORE_VALUES_FILE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
         else
           kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} delete configmap bigbang-core-values --ignore-not-found
         fi
       # No REPO_URL given → seed the local gitea with the working tree and use it
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
-      # Gateway TLS: the public dev wildcard cert for *.dev.bigbang.mil (the
-      # same one the umbrella ships in chart/ingress-certs.yaml); the gateway
-      # servers reference credentialName public-cert
+      # Gateway TLS: the gateway servers reference credentialName public-cert.
+      # The umbrella ships the public dev wildcard cert for *.dev.bigbang.mil
+      # in chart/ingress-certs.yaml; read it from the local checkout when
+      # present, otherwise download it from the umbrella repo (CI).
       - |
-        certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
-        if [ -f "$certs" ] && ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
+        if ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
           kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
           tmp=$(mktemp -d)
+          certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
+          if [ ! -f "$certs" ]; then
+            echo "no umbrella checkout at $certs; downloading {{.BIGBANG_CERTS_URL}}"
+            certs="$tmp/ingress-certs.yaml"
+            curl -fsSL -o "$certs" "{{.BIGBANG_CERTS_URL}}"
+          fi
           yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
           yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
           kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
@@ -285,7 +312,7 @@ tasks:
         # count the child releases the chart renders (exclude the parent),
         # honoring the CORE_VALUES overlay when one is in play
         if [ -n "{{.CORE_VALUES}}" ]; then
-          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml "{{.CORE_VALUES}}")
+          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml {{.CORE_VALUES_FILE}})
         else
           expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
         fi
@@ -352,3 +379,28 @@ tasks:
       - task: cluster:recreate
       - task: core:deploy
       - task: packages:deploy
+
+  playwright:install:
+    desc: "Install the playwright suite's dependencies and chromium (WITH_DEPS=true also installs the OS packages, for CI runners)"
+    dir: playwright-tests
+    cmds:
+      - npm ci
+      - npx playwright install {{if eq .WITH_DEPS "true"}}--with-deps {{end}}chromium
+
+  playwright:test:
+    desc: "Run the playwright suite against the current kubectl context: task playwright:test [SPEC=tests/kiali.spec.ts]"
+    dir: playwright-tests
+    cmds:
+      - npx playwright test {{.SPEC}}
+
+  ci:
+    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), deploy core-minimal with upstream images from the local gitea, then kiali. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
+    cmds:
+      - task: cluster:recreate
+        vars: { UPSTREAM_IMAGES: "true" }
+      - task: core:deploy
+        vars: { CORE_VALUES: "dev/values/core-minimal.yaml,dev/values/upstream-images.yaml" }
+      - task: package:deploy
+        vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
+      - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
+      - task: status
