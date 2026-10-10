@@ -1,13 +1,23 @@
-# helm-controller's createNamespace can't set labels, so namespaces that need
-# them (e.g. istio-injection) are rendered here by the parent release.
+# The parent release is the authoritative creator of every package namespace
+# (child HelmReleases set createNamespace: false): helm-controller's
+# createNamespace can't set labels and would race these objects, creating the
+# namespace unlabeled before the labels here could apply. Packages sharing a
+# namespace are deduped and their namespaceLabels merged.
+{{- $byNamespace := dict }}
 {{- range $name, $pkg := .Values.packages }}
-{{- if and $pkg.enabled $pkg.namespaceLabels }}
+{{- if $pkg.enabled }}
+{{- $labels := merge (index $byNamespace $pkg.namespace | default dict) ($pkg.namespaceLabels | default dict) }}
+{{- $_ := set $byNamespace $pkg.namespace $labels }}
+{{- end }}
+{{- end }}
+{{- range $namespace, $labels := $byNamespace }}
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ $pkg.namespace }}
+  name: {{ $namespace }}
+  {{- with $labels }}
   labels:
-    {{- toYaml $pkg.namespaceLabels | nindent 4 }}
-{{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
