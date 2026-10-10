@@ -62,7 +62,13 @@ REPO_URL=… TARGET_REVISION=main FLUX_NAMESPACE=flux-system \
 For single-package testing, deploy just the operator + CRDs + istio with
 `task core:deploy CORE_VALUES=dev/values/core-minimal.yaml` (the parent
 HelmRelease reads overrides from the optional `bigbang-core-values`
-ConfigMap), then `task package:deploy PKG=<name> ...`.
+ConfigMap), then `task package:deploy PKG=<name> ...`. `CORE_VALUES` also
+takes a comma-separated list, merged in order; without registry1 credentials
+add `dev/values/upstream-images.yaml`, which points istio at GHCR copies of
+the upstream images (`task images:mirror` copies them from docker.io per
+`dev/mirror-images.txt`). `task ci` runs that combination on a cluster
+created with `UPSTREAM_IMAGES=true`, and `.github/workflows/ci.yaml` runs
+the mirror and then the cluster on every push and pull request.
 
 Disable a package with `packages.kyverno-reporter.enabled=false` (via the
 parent HelmRelease's `spec.values`).

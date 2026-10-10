@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mirror-images:
+    name: Mirror upstream images to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Copies dev/mirror-images.txt (istio pilot/proxyv2) from docker.io
+      # into the GHCR namespace; no-op for tags already present.
+      - name: Mirror images
+        run: task images:mirror
+
+      # The k3s nodes pull anonymously, so a package GHCR created private on
+      # first push has to be made public once (link in the failure output).
+      - name: Verify anonymous pull
+        run: task images:verify
+
+  core-minimal:
+    name: k3d cluster + core-minimal (upstream images)
+    needs: mirror-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      # Taskfile vars: the Big Bang dev registry cache dir doesn't exist on
+      # the runner, so point the bb-k3d volume mounts at the workspace.
+      K3D_VOLUME_DIR: ${{ github.workspace }}/.k3d
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+
+      - name: Install k3d
+        run: |
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: Tool versions
+        run: |
+          docker version --format '{{.Server.Version}}'
+          helm version --short
+          kubectl version --client
+          yq --version
+
+      # cluster:recreate (bb-k3d with its values-public.yaml, no registry1
+      # creds) + core:deploy with the core-minimal and upstream-images
+      # overlays, sourced from a local gitea seeded with the checkout.
+      - name: Create cluster and deploy core-minimal
+        run: task ci K3D_VOLUME_DIR="$K3D_VOLUME_DIR"
+
+      - name: Cluster state
+        if: always()
+        run: |
+          echo "=== Nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== HelmReleases ==="
+          kubectl get helmreleases -A || true
+          echo "=== Packages ==="
+          kubectl get packages -A || true
+          echo "=== Pods ==="
+          kubectl get pods -A -o wide || true
+
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          echo "=== HelmRelease conditions ==="
+          kubectl get helmreleases -A -o yaml | yq '.items[] | {"name": .metadata.name, "conditions": .status.conditions}' || true
+          echo "=== Non-running pods ==="
+          kubectl get pods -A --no-headers | grep -vE "Running|Completed" || true
+          for p in $(kubectl get pods -A --no-headers | grep -vE "Running|Completed" | awk '{print $1"/"$2}'); do
+            ns=${p%%/*}; name=${p##*/}
+            echo "--- describe $p"; kubectl -n "$ns" describe pod "$name" | tail -40 || true
+            echo "--- logs $p"; kubectl -n "$ns" logs "$name" --all-containers --tail=50 || true
+          done
+          echo "=== Warning events ==="
+          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60 || true
+          echo "=== Flux controller logs ==="
+          ns=$(kubectl get deploy -A -l app.kubernetes.io/part-of=flux -o jsonpath='{.items[0].metadata.namespace}')
+          kubectl -n "$ns" logs deploy/helm-controller --tail=100 || true
+          kubectl -n "$ns" logs deploy/source-controller --tail=50 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          task gitea:down || true
+          task cluster:delete || true

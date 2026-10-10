@@ -9,9 +9,16 @@ version: "3"
 #   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
+#   task ci                         # CI profile: cluster without registry1 creds + core-minimal on upstream images
 #
 # With no REPO_URL, core:deploy/up auto-run gitea:up (a local gitea on the
 # cluster network seeded from the working tree) and deploy from it.
+#
+# UPSTREAM_IMAGES=true drops the registry1 requirement: the cluster renders
+# with bb-k3d's values-public.yaml (public Flux/MetalLB images) and core
+# should be deployed with dev/values/upstream-images.yaml in CORE_VALUES.
+# That overlay points istio at GHCR copies of the upstream images, which
+# `task images:mirror` (dev/mirror-images.txt) copies from docker.io.
 
 vars:
   CLUSTER: bb-helm
@@ -28,6 +35,12 @@ vars:
   # The bbtask bb-k3d chart: renders the k3d Simple config plus the bootstrap
   # manifests (MetalLB + Flux) that k3d injects into the k3s server.
   BB_K3D_CHART: oci://ghcr.io/rjferguson21/bb-k3d:0.3.5
+  # true = no registry1 creds; render bb-k3d with its public-image values
+  UPSTREAM_IMAGES: '{{.UPSTREAM_IMAGES | default "false"}}'
+  # GHCR namespace the upstream images in dev/mirror-images.txt are mirrored
+  # to (images:mirror); dev/values/upstream-images.yaml must point at it
+  GHCR_MIRROR: ghcr.io/rjferguson21
+  MIRROR_LIST: dev/mirror-images.txt
   # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
   # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
   K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
@@ -52,17 +65,21 @@ tasks:
   cluster:recreate:
     desc: "(Re)create the dev k3d cluster from the bb-k3d chart (MetalLB + Flux bootstrap, registry1 pull-through cache)."
     preconditions:
-      - sh: test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"
-        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds)"
+      - sh: test "{{.UPSTREAM_IMAGES}}" = "true" || { test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"; }
+        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds), or pass UPSTREAM_IMAGES=true"
     cmds:
       - k3d cluster delete {{.CLUSTER}} 2>/dev/null || true
       - k3d registry delete repo1 2>/dev/null || true
-      # Render the chart; k3d resolves the injected bootstrap.yaml relative to
-      # the config file, so both land in k3d/.rendered/
+      # Pull the chart locally (its values-public.yaml is only reachable from
+      # an unpacked copy), then render; k3d resolves the injected
+      # bootstrap.yaml relative to the config file, so both land in k3d/.rendered/
       - |
         mkdir -p k3d/.rendered {{.K3D_VOLUME_DIR}}/cypress
         echo "*" > k3d/.rendered/.gitignore
-        helm template k3d {{.BB_K3D_CHART}} \
+        rm -rf k3d/.rendered/chart
+        helm pull {{.BB_K3D_CHART}} --untar --untardir k3d/.rendered/chart
+        helm template k3d k3d/.rendered/chart/bb-k3d \
+          {{if eq .UPSTREAM_IMAGES "true"}}-f k3d/.rendered/chart/bb-k3d/values-public.yaml{{end}} \
           --set k3d.serverIP=0.0.0.0 \
           --set k3d.metricsServer=true \
           --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
@@ -239,20 +256,26 @@ tasks:
     vars:
       # explicit REPO_URL wins; otherwise fall back to the local dev gitea
       SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
-      # optional overrides file for the core chart (e.g. dev/values/core-minimal.yaml)
+      # optional overrides for the core chart: one file or a comma-separated
+      # list merged in order (e.g. dev/values/core-minimal.yaml,dev/values/upstream-images.yaml)
       CORE_VALUES: '{{.CORE_VALUES | default ""}}'
+      # the merged overlay the ConfigMap and the readiness count are built from
+      CORE_VALUES_FILE: k3d/.rendered/core-values.yaml
     cmds:
       - task: core:flux
       # Namespace for the GitRepository + HelmReleases (the controllers may
       # run elsewhere; they watch all namespaces)
       - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
       # Core chart overrides: the parent HelmRelease reads the optional
-      # bigbang-core-values ConfigMap; populate it from CORE_VALUES or remove
-      # it so a previous profile doesn't linger
+      # bigbang-core-values ConfigMap; populate it from CORE_VALUES (merged
+      # with yq when several files are given) or remove it so a previous
+      # profile doesn't linger
       - |
         if [ -n "{{.CORE_VALUES}}" ]; then
+          mkdir -p k3d/.rendered && echo "*" > k3d/.rendered/.gitignore
+          yq eval-all '. as $item ireduce ({}; . * $item)' $(echo "{{.CORE_VALUES}}" | tr ',' ' ') > {{.CORE_VALUES_FILE}}
           kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} create configmap bigbang-core-values \
-            --from-file=values.yaml={{.CORE_VALUES}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+            --from-file=values.yaml={{.CORE_VALUES_FILE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
         else
           kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} delete configmap bigbang-core-values --ignore-not-found
         fi
@@ -285,7 +308,7 @@ tasks:
         # count the child releases the chart renders (exclude the parent),
         # honoring the CORE_VALUES overlay when one is in play
         if [ -n "{{.CORE_VALUES}}" ]; then
-          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml "{{.CORE_VALUES}}")
+          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml {{.CORE_VALUES_FILE}})
         else
           expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
         fi
@@ -352,3 +375,51 @@ tasks:
       - task: cluster:recreate
       - task: core:deploy
       - task: packages:deploy
+
+  images:mirror:
+    desc: "Copy the upstream images in {{.MIRROR_LIST}} into {{.GHCR_MIRROR}} (multi-arch, via buildx imagetools). Needs `docker login ghcr.io` with packages:write; tags already present are skipped."
+    cmds:
+      - |
+        set -e
+        grep -vE '^\s*(#|$)' {{.MIRROR_LIST}} | while read -r src; do
+          dst="{{.GHCR_MIRROR}}/${src#*/}"
+          if docker manifest inspect "$dst" >/dev/null 2>&1; then
+            echo "present: $dst"
+            continue
+          fi
+          echo "mirror: $src -> $dst"
+          docker buildx imagetools create --tag "$dst" "$src"
+        done
+
+  images:verify:
+    desc: "Check every mirrored image in {{.MIRROR_LIST}} is pullable anonymously (a freshly created GHCR package is private until made public in its settings)"
+    cmds:
+      - |
+        set -e
+        rc=0
+        grep -vE '^\s*(#|$)' {{.MIRROR_LIST}} | while read -r src; do
+          dst="{{.GHCR_MIRROR}}/${src#*/}"
+          repo="${dst#ghcr.io/}"; repo="${repo%:*}"; tag="${dst##*:}"
+          token=$(curl -s "https://ghcr.io/token?scope=repository:${repo}:pull" | sed -E 's/.*"token":"([^"]+)".*/\1/')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/${repo}/manifests/${tag}")
+          if [ "$code" = "200" ]; then
+            echo "ok: $dst"
+          else
+            echo "NOT anonymously pullable ($code): $dst — make the package public: https://github.com/users/${repo%%/*}/packages/container/$(echo "${repo#*/}" | sed 's#/#%2F#g')/settings"
+            rc=1
+          fi
+          echo $rc > .mirror-verify-rc
+        done
+        rc=$(cat .mirror-verify-rc 2>/dev/null || echo 0); rm -f .mirror-verify-rc
+        exit $rc
+
+  ci:
+    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), then deploy core-minimal with upstream images (GHCR mirrors, see images:mirror) from the local gitea"
+    cmds:
+      - task: cluster:recreate
+        vars: { UPSTREAM_IMAGES: "true" }
+      - task: core:deploy
+        vars: { CORE_VALUES: "dev/values/core-minimal.yaml,dev/values/upstream-images.yaml" }
+      - task: status

@@ -1,0 +1,23 @@
+# Upstream (public) image overlay for the core-minimal profile — for CI and
+# other environments without registry1.dso.mil credentials. Compose with
+# core-minimal:
+#
+#   task core:deploy CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
+#
+# Istio publishes no GHCR images, so pilot/proxyv2 are mirrored from
+# docker.io/istio into GHCR by `task images:mirror` (list: dev/mirror-images.txt;
+# the ci workflow runs it before the cluster job). The hub below must match
+# the Taskfile's GHCR_MIRROR namespace, and the packages must be public so
+# the k3s nodes can pull anonymously.
+#
+# Only the core-minimal set is covered: bigbang-operator already defaults to
+# its public GHCR image, istio-crds and prometheus-operator-crds ship no
+# images, and the istio-gateway pod's image is "auto" (istiod's injector
+# rewrites it from the hub below). The full profile (kyverno, monitoring,
+# loki, grafana, alloy) still pulls from registry1.
+packages:
+  istiod:
+    values:
+      upstream:
+        global:
+          hub: ghcr.io/rjferguson21/istio
