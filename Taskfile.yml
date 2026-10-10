@@ -311,10 +311,12 @@ tasks:
         ns={{.FLUX_NAMESPACE}}
         # count the child releases the chart renders (exclude the parent),
         # honoring the CORE_VALUES overlay when one is in play
+        # ambient-only packages (requiresAmbient) count only when istio.ambient.enabled
+        count='(.istio.ambient.enabled // false) as $amb | [.packages[] | select(.enabled != false) | select(.requiresAmbient != true or $amb)] | length'
         if [ -n "{{.CORE_VALUES}}" ]; then
-          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml {{.CORE_VALUES_FILE}})
+          expected=$(yq eval-all "select(fileIndex==0) * select(fileIndex==1) | $count" core/values.yaml {{.CORE_VALUES_FILE}})
         else
-          expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
+          expected=$(yq "$count" core/values.yaml)
         fi
         echo "waiting for $expected core HelmReleases to be Ready..."
         deadline=$(( $(date +%s) + 900 ))

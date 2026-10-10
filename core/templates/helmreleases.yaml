@@ -1,5 +1,6 @@
+{{- $ambient := dig "ambient" "enabled" false (.Values.istio | default dict) }}
 {{- range $name, $pkg := .Values.packages }}
-{{- if $pkg.enabled }}
+{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient)) "true" }}
 {{- $flux := mergeOverwrite (deepCopy $.Values.flux) (deepCopy ($pkg.flux | default dict)) }}
 {{- $wave := int ($pkg.wave | default 0) }}
 ---
@@ -24,7 +25,7 @@ spec:
   {{- toYaml $flux | nindent 2 }}
   {{- $deps := list }}
   {{- range $depName, $dep := $.Values.packages }}
-  {{- if and $dep.enabled (lt (int ($dep.wave | default 0)) $wave) }}
+  {{- if and (eq (include "core.pkgEnabled" (dict "pkg" $dep "ambient" $ambient)) "true") (lt (int ($dep.wave | default 0)) $wave) }}
   {{- $deps = append $deps $depName }}
   {{- end }}
   {{- end }}
@@ -38,6 +39,17 @@ spec:
     {{- $vals := deepCopy $.Values.packageValues }}
     {{- $_ := set $vals "domain" $.Values.domain }}
     {{- with $pkg.values }}{{- $vals = mergeOverwrite $vals (deepCopy .) }}{{- end }}
+    {{- if $ambient }}
+    {{- /* Every Package CR advertises ambient so the operator generates HBONE-aware
+           policies and drops the sidecar resource (keyed on spec.istio.ambient.enabled). */}}
+    {{- $vals = mergeOverwrite $vals (dict "bigbangPackage" (dict "istio" (dict "ambient" (dict "enabled" true)))) }}
+    {{- if eq $name "istiod" }}
+    {{- $vals = mergeOverwrite $vals (dict "upstream" (dict "cni" (dict "enabled" true) "pilot" (dict "env" (dict "PILOT_ENABLE_AMBIENT" "true")) "meshConfig" (dict "defaultConfig" (dict "proxyMetadata" (dict "ISTIO_META_ENABLE_HBONE" "true"))))) }}
+    {{- /* ambient's default-deny netpols otherwise block ztunnel (no Package CR
+           of its own) from reaching istiod XDS on 15012 within istio-system */}}
+    {{- $vals = mergeOverwrite $vals (dict "bigbangPackage" (dict "networkPolicies" (dict "enabled" true "ingress" (dict "defaults" (dict "allowInNamespace" (dict "enabled" true))) "egress" (dict "defaults" (dict "allowInNamespace" (dict "enabled" true)))))) }}
+    {{- end }}
+    {{- end }}
     {{- toYaml $vals | nindent 4 }}
 {{- end }}
 {{- end }}

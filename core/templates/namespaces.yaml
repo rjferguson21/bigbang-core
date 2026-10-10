@@ -2,11 +2,18 @@
 # (child HelmReleases set createNamespace: false): helm-controller's
 # createNamespace can't set labels and would race these objects, creating the
 # namespace unlabeled before the labels here could apply. Packages sharing a
-# namespace are deduped and their namespaceLabels merged.
+# namespace are deduped and their labels merged. Packages with meshInjection get
+# the mesh-enrollment label for the active mode: istio.io/dataplane-mode=ambient
+# when ambient is on, istio-injection=enabled otherwise.
+{{- $ambient := dig "ambient" "enabled" false (.Values.istio | default dict) }}
+{{- $meshLabel := ternary (dict "istio.io/dataplane-mode" "ambient") (dict "istio-injection" "enabled") $ambient }}
 {{- $byNamespace := dict }}
 {{- range $name, $pkg := .Values.packages }}
-{{- if $pkg.enabled }}
+{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient)) "true" }}
 {{- $labels := merge (index $byNamespace $pkg.namespace | default dict) ($pkg.namespaceLabels | default dict) }}
+{{- if $pkg.meshInjection }}
+{{- $labels = merge $labels (deepCopy $meshLabel) }}
+{{- end }}
 {{- $_ := set $byNamespace $pkg.namespace $labels }}
 {{- end }}
 {{- end }}

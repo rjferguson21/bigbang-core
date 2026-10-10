@@ -1,5 +1,15 @@
 domain: dev.bigbang.mil
 
+# Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
+# packages deploy (they're gated with requiresAmbient), istiod runs with
+# ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so
+# the operator generates HBONE-aware policies and drops sidecar resources), and
+# mesh namespaces use istio.io/dataplane-mode=ambient instead of
+# istio-injection=enabled.
+istio:
+  ambient:
+    enabled: false
+
 # Flux source the child HelmReleases pull their charts from (by path within
 # the repo). Created alongside the parent HelmRelease (core/bigbang-core.yaml);
 # namespace defaults to the parent release namespace.
@@ -151,6 +161,34 @@ packages:
         service:
           annotations:
             metallb.io/loadBalancerIPs: 172.28.0.3
+  # Ambient data plane (only deployed when istio.ambient.enabled; requiresAmbient
+  # gates them out of the package set otherwise). istio-cni installs the node CNI
+  # plugin that redirects ambient-labeled pods to ztunnel, the per-node L4 mTLS proxy.
+  istio-cni:
+    enabled: true
+    requiresAmbient: true
+    releaseName: istio-cni
+    namespace: istio-system
+    chart: core/istio-cni/chart
+    wave: 1
+    values:
+      upstream:
+        # k3s keeps CNI config/binaries under /var/lib/rancher/k3s, not the
+        # istio defaults (/etc/cni/net.d, /opt/cni/bin); without these the
+        # chained istio-cni agent never finds flannel and stays not-ready
+        cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
+        cniBinDir: /var/lib/rancher/k3s/data/cni
+  ztunnel:
+    enabled: true
+    requiresAmbient: true
+    releaseName: ztunnel
+    namespace: istio-system
+    chart: core/ztunnel/chart
+    # wave 1 (with istiod/istio-cni, before kyverno-policies at wave 2): the node
+    # agents are admitted while no ClusterPolicy exists yet, so bring-up never
+    # depends on the kyverno exclude landing first. ztunnel tolerates istiod
+    # still coming up. Must precede every ambient workload (wave 3).
+    wave: 1
   kyverno:
     enabled: true
     releaseName: kyverno-kyverno
@@ -170,14 +208,39 @@ packages:
           parameters:
             allow:
             - /var/lib/rancher/k3s/storage/pvc-*
+      # Carve-outs for the ambient data plane (istio-cni/ztunnel): privileged,
+      # host-path node agents that can't satisfy the pod-security policies.
+      # Uses the native per-policy exclude (merged into every policy) rather than
+      # a PolicyException — this kyverno honors excludes, but ignores the
+      # deprecated kyverno.io/v2 PolicyException for these ClusterPolicies.
+      # Matched by label, not name: DaemonSet pods are admitted with an empty
+      # name (generateName), so a name glob never matches at admission. Harmless
+      # when ambient is off (nothing carries these labels).
+      exclude:
+        any:
+        - resources:
+            namespaces:
+            - kube-system
+        - resources:
+            namespaces:
+            - istio-system
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: istio-cni
+        - resources:
+            namespaces:
+            - istio-system
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: ztunnel
   kyverno-reporter:
     enabled: true
     releaseName: kyverno-reporter-kyverno-reporter
     namespace: kyverno-reporter
     chart: core/kyverno-reporter/chart
-    wave: 2
-    namespaceLabels:
-      istio-injection: enabled
+    # wave 3 (not 2) so ztunnel (wave 2) is up before this ambient workload
+    wave: 3
+    meshInjection: true
   # --- observability stack ---
   monitoring:
     enabled: true
@@ -185,17 +248,15 @@ packages:
     namespace: monitoring
     chart: core/monitoring/chart
     wave: 3
-    # labels the shared monitoring namespace (monitoring, grafana, prom CRDs)
-    namespaceLabels:
-      istio-injection: enabled
+    # mesh-enrolls the shared monitoring namespace (monitoring, grafana, prom CRDs)
+    meshInjection: true
   loki:
     enabled: true
     releaseName: logging
     namespace: logging
     chart: core/loki/chart
     wave: 3
-    namespaceLabels:
-      istio-injection: enabled
+    meshInjection: true
   grafana:
     enabled: true
     releaseName: monitoring-grafana
@@ -220,8 +281,7 @@ packages:
     namespace: alloy
     chart: core/alloy/chart
     wave: 3  # alongside loki (log shipping) and monitoring (scraping)
-    namespaceLabels:
-      istio-injection: enabled
+    meshInjection: true
     values:
       # dev collector wiring: ship pod logs to loki, expose logs collector to prometheus
       upstream:
