@@ -13,7 +13,10 @@ flux:
   interval: 1m
   timeout: 10m
   install:
-    createNamespace: true
+    # the parent release creates every package namespace (core/templates/
+    # namespaces.yaml) so it can set istio-injection labels; a racing
+    # helm-controller createNamespace would create them unlabeled first
+    createNamespace: false
     remediation:
       retries: -1
   upgrade:
@@ -173,6 +176,8 @@ packages:
     namespace: kyverno-reporter
     chart: core/kyverno-reporter/chart
     wave: 2
+    namespaceLabels:
+      istio-injection: enabled
   # --- observability stack ---
   monitoring:
     enabled: true
@@ -180,12 +185,17 @@ packages:
     namespace: monitoring
     chart: core/monitoring/chart
     wave: 3
+    # labels the shared monitoring namespace (monitoring, grafana, prom CRDs)
+    namespaceLabels:
+      istio-injection: enabled
   loki:
     enabled: true
     releaseName: logging
     namespace: logging
     chart: core/loki/chart
     wave: 3
+    namespaceLabels:
+      istio-injection: enabled
   grafana:
     enabled: true
     releaseName: monitoring-grafana
@@ -210,6 +220,8 @@ packages:
     namespace: alloy
     chart: core/alloy/chart
     wave: 3  # alongside loki (log shipping) and monitoring (scraping)
+    namespaceLabels:
+      istio-injection: enabled
     values:
       # dev collector wiring: ship pod logs to loki, expose logs collector to prometheus
       upstream:

@@ -286,7 +286,7 @@ tasks:
       # present, otherwise download it from the umbrella repo (CI).
       - |
         if ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
-          kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+          kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | yq '.metadata.labels."istio-injection" = "enabled"' | kubectl --context {{.CTX}} apply -f -
           tmp=$(mktemp -d)
           certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
           if [ ! -f "$certs" ]; then
