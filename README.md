@@ -80,14 +80,19 @@ task package:deploy PKG=<name> RELEASE=<release> NS=<ns>
 
 `UPSTREAM_IMAGES=true` on `cluster:recreate` drops the registry1
 requirement and renders the cluster with the bb-k3d chart's public-image
-values.
+values; on `package:deploy` it adds `dev/values/upstream/<PKG>.yaml` when
+one exists (kiali so far).
 
 ## CI
 
 `.github/workflows/ci.yaml` runs on pushes to main and on pull requests. It
-runs `task ci`, which recreates a k3d cluster with `UPSTREAM_IMAGES=true`
-and deploys core with the core-minimal and upstream-images overlays from
-the local gitea, then waits for every HelmRelease to report Ready.
+runs `task ci`, which recreates a k3d cluster with `UPSTREAM_IMAGES=true`,
+deploys core with the core-minimal and upstream-images overlays from the
+local gitea, waits for every HelmRelease to report Ready, then deploys the
+kiali package with its `dev/values/upstream/kiali.yaml` overlay. It then
+installs the Playwright suite and runs `tests/kiali.spec.ts` against the
+cluster (the gateway serves a self-signed wildcard cert when the umbrella
+checkout isn't present). Traces are uploaded on failure.
 
 The workflow prints nodes, HelmReleases, Packages and pods on every run, and
 pod descriptions, logs, warning events and Flux controller logs on failure.

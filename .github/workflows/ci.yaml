@@ -9,7 +9,7 @@ on:
 
 jobs:
   core-minimal:
-    name: k3d cluster + core-minimal (upstream images)
+    name: k3d cluster + core-minimal + kiali (upstream images)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -41,9 +41,33 @@ jobs:
 
       # cluster:recreate (bb-k3d with its values-public.yaml, no registry1
       # creds) + core:deploy with the core-minimal and upstream-images
-      # overlays, sourced from a local gitea seeded with the checkout.
-      - name: Create cluster and deploy core-minimal
+      # overlays, sourced from a local gitea seeded with the checkout, then
+      # the kiali package with dev/values/upstream/kiali.yaml.
+      - name: Create cluster, deploy core-minimal and kiali
         run: task ci K3D_VOLUME_DIR="$K3D_VOLUME_DIR"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: playwright-tests/package-lock.json
+
+      - name: Install Playwright
+        run: task playwright:install WITH_DEPS=true
+
+      # Hosts under *.dev.bigbang.mil resolve to the gateway LB IP, which the
+      # suite discovers from the kubectl context (helpers/cluster.ts).
+      - name: Kiali playwright tests
+        run: task playwright:test SPEC=tests/kiali.spec.ts
+
+      - name: Upload playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: playwright-tests/test-results/
+          if-no-files-found: ignore
 
       - name: Cluster state
         if: always()

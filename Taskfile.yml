@@ -217,7 +217,7 @@ tasks:
         fi
 
   package:deploy:
-    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]"
+    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]. Adds dev/values/<PKG>.yaml if present, plus dev/values/upstream/<PKG>.yaml when UPSTREAM_IMAGES=true"
     requires:
       vars: [PKG, RELEASE, NS]
     vars:
@@ -233,6 +233,7 @@ tasks:
         --set bigbangPackage.networkPolicies.enabled=true
         {{if .EXTRA}}{{.EXTRA}}{{end}}
         $(test -f dev/values/{{.PKG}}.yaml && echo "-f dev/values/{{.PKG}}.yaml")
+        $(test "{{.UPSTREAM_IMAGES}}" = "true" && test -f dev/values/upstream/{{.PKG}}.yaml && echo "-f dev/values/upstream/{{.PKG}}.yaml")
         {{if eq .IGNORE_ERROR "true"}}|| true{{end}}
 
   core:flux:
@@ -277,16 +278,25 @@ tasks:
       # No REPO_URL given → seed the local gitea with the working tree and use it
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
-      # Gateway TLS: the public dev wildcard cert for *.dev.bigbang.mil (the
-      # same one the umbrella ships in chart/ingress-certs.yaml); the gateway
-      # servers reference credentialName public-cert
+      # Gateway TLS: the gateway servers reference credentialName public-cert.
+      # Use the public dev wildcard cert for *.dev.bigbang.mil the umbrella
+      # ships in chart/ingress-certs.yaml when that checkout exists; otherwise
+      # (CI) mint a self-signed wildcard so the HTTPS listener still comes up
+      # (the playwright suite ignores TLS errors).
       - |
-        certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
-        if [ -f "$certs" ] && ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
+        if ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
           kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
           tmp=$(mktemp -d)
-          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
-          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+          certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
+          if [ -f "$certs" ]; then
+            yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+            yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+          else
+            echo "no umbrella checkout at $certs; using a self-signed *.dev.bigbang.mil cert"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=*.dev.bigbang.mil" \
+              -addext "subjectAltName=DNS:*.dev.bigbang.mil,DNS:dev.bigbang.mil" \
+              -keyout "$tmp/tls.key" -out "$tmp/tls.crt" 2>/dev/null
+          fi
           kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
           rm -rf "$tmp"
         fi
@@ -371,11 +381,27 @@ tasks:
       - task: core:deploy
       - task: packages:deploy
 
+  playwright:install:
+    desc: "Install the playwright suite's dependencies and chromium (WITH_DEPS=true also installs the OS packages, for CI runners)"
+    dir: playwright-tests
+    cmds:
+      - npm ci
+      - npx playwright install {{if eq .WITH_DEPS "true"}}--with-deps {{end}}chromium
+
+  playwright:test:
+    desc: "Run the playwright suite against the current kubectl context: task playwright:test [SPEC=tests/kiali.spec.ts]"
+    dir: playwright-tests
+    cmds:
+      - npx playwright test {{.SPEC}}
+
   ci:
-    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), then deploy core-minimal with upstream images from the local gitea"
+    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), deploy core-minimal with upstream images from the local gitea, then kiali. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
     cmds:
       - task: cluster:recreate
         vars: { UPSTREAM_IMAGES: "true" }
       - task: core:deploy
         vars: { CORE_VALUES: "dev/values/core-minimal.yaml,dev/values/upstream-images.yaml" }
+      - task: package:deploy
+        vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
+      - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
       - task: status

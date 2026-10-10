@@ -1,0 +1,16 @@
+# Public-image overrides for the kiali package. package:deploy adds this file
+# when UPSTREAM_IMAGES=true (dev/values/upstream/<PKG>.yaml). Tags track the
+# chart's helm.sh/images annotation.
+waitJob:
+  # gluon post-install hook; needs bash + kubectl (see dev/values/upstream-images.yaml)
+  image: mirror.gcr.io/alpine/k8s:1.33.3
+  enableImagePullSecrets: false
+upstream:
+  image:
+    repo: quay.io/kiali/kiali-operator
+    pullSecrets: []
+  cr:
+    spec:
+      deployment:
+        image_name: quay.io/kiali/kiali
+        image_pull_secrets: []
