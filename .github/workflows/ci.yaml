@@ -36,8 +36,9 @@ jobs:
       - name: Mirror images
         run: task images:mirror
 
-      # The k3s nodes pull anonymously, so a package GHCR created private on
-      # first push has to be made public once (link in the failure output).
+      # The k3s nodes pull anonymously. Packages first published by this
+      # workflow inherit the repo's public visibility; the failure output
+      # links to the package settings if one isn't pullable.
       - name: Verify anonymous pull
         run: task images:verify
 

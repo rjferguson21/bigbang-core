@@ -89,8 +89,9 @@ values.
 1. `task images:mirror` copies the images in `dev/mirror-images.txt`
    (istio pilot and proxyv2) from docker.io into `ghcr.io/rjferguson21`,
    skipping tags already there, and `task images:verify` checks they pull
-   anonymously. GHCR creates a package private on first push; it has to be
-   made public once, and the verify step prints the link.
+   anonymously (packages first published by the workflow inherit this
+   repo's public visibility; the verify step prints the settings link if
+   one ever isn't).
 2. `task ci` recreates a k3d cluster with `UPSTREAM_IMAGES=true` and deploys
    core with the core-minimal and upstream-images overlays from the local
    gitea, then waits for every HelmRelease to report Ready.

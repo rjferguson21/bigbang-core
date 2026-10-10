@@ -7,8 +7,8 @@
 # Istio publishes no GHCR images, so pilot/proxyv2 are mirrored from
 # docker.io/istio into GHCR by `task images:mirror` (list: dev/mirror-images.txt;
 # the ci workflow runs it before the cluster job). The hub below must match
-# the Taskfile's GHCR_MIRROR namespace, and the packages must be public so
-# the k3s nodes can pull anonymously.
+# the Taskfile's GHCR_MIRROR namespace; the packages must be anonymously
+# pullable (they inherit the repo's visibility when the workflow publishes them).
 #
 # Only the core-minimal set is covered: bigbang-operator already defaults to
 # its public GHCR image, istio-crds and prometheus-operator-crds ship no

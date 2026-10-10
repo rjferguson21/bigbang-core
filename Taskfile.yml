@@ -392,7 +392,7 @@ tasks:
         done
 
   images:verify:
-    desc: "Check every mirrored image in {{.MIRROR_LIST}} is pullable anonymously (a freshly created GHCR package is private until made public in its settings)"
+    desc: "Check every mirrored image in {{.MIRROR_LIST}} is pullable anonymously (packages the workflow publishes inherit the repo's visibility; one pushed by hand starts private)"
     cmds:
       - |
         set -e
