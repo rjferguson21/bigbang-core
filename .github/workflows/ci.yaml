@@ -32,6 +32,13 @@ jobs:
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version
 
+      # package:deploy uses `helm upgrade --force-conflicts`, a Helm 4
+      # (server-side apply) flag; the runner image ships Helm 3.
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
       - name: Tool versions
         run: |
           docker version --format '{{.Server.Version}}'
