@@ -5,9 +5,11 @@
 alloy/
 bigbang-operator/
 grafana/
+istio-cni/
 istio-crds/
 istio-gateway/
 istiod/
+ztunnel/
 kyverno/
 kyverno-policies/
 kyverno-reporter/

@@ -1,0 +1,26 @@
+apiVersion: v2
+name: ztunnel
+version: 1.30.4-bb.1
+appVersion: 1.30.4
+description: Helm chart for the Istio ztunnel node proxy (required for ambient mesh). This variant delegates configuration to the Big Bang operator via a Package CR instead of bb-common.
+icon: https://istio.io/latest/favicons/android-192x192.png
+keywords:
+  - istio
+  - ztunnel
+  - ambient
+sources:
+  - https://github.com/istio/istio
+dependencies:
+  - name: ztunnel
+    repository: https://blob.istio.io/istio-release/charts
+    version: 1.30.4
+    alias: upstream
+annotations:
+  bigbang.dev/passthrough: "true"
+  bigbang.dev/passthrough-toplevel-key: upstream
+  bigbang.dev/maintenanceTrack: bb_integrated
+  helm.sh/images: |
+    - name: ztunnel
+      image: registry1.dso.mil/ironbank/opensource/istio/ztunnel:1.30.4
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    - [Find upstream chart's release notes and CHANGELOG here](https://istio.io/latest/news/releases)

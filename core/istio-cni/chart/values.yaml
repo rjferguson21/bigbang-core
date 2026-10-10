@@ -1,0 +1,9 @@
+# Values passed through to the upstream istio cni chart
+# (https://github.com/istio/istio/blob/master/manifests/charts/istio-cni/values.yaml).
+upstream:
+  ambient:
+    enabled: true
+  global:
+    hub: registry1.dso.mil/ironbank/opensource/istio
+    tag: 1.30.4
+    istioNamespace: istio-system

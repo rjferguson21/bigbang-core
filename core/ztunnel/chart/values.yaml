@@ -1,0 +1,6 @@
+# Values passed through to the upstream istio ztunnel chart
+# (https://github.com/istio/istio/blob/master/manifests/charts/ztunnel/values.yaml).
+upstream:
+  hub: registry1.dso.mil/ironbank/opensource/istio
+  tag: 1.30.4
+  istioNamespace: istio-system
