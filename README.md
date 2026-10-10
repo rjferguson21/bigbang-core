@@ -11,7 +11,6 @@ packages are deployed with Helm on top of it.
 core/              # Flux parent chart + the core packages (operator, Istio, Kyverno, observability)
 packages/          # app packages (keycloak, gitlab, kiali, logging, security tools, …)
 dev/values/        # overlays for the dev/CI clusters (core-minimal, upstream-images, per-package tweaks)
-dev/mirror-images.txt  # upstream images CI mirrors into GHCR
 playwright-tests/  # shared end-to-end suite, run against a deployed cluster
 Taskfile.yml       # dev harness: k3d cluster, core via Flux, packages via helm
 .github/workflows/ # CI: k3d cluster + core-minimal on upstream images
@@ -70,8 +69,9 @@ comma-separated list merged in order:
   Istio, for testing one package at a time.
 - `dev/values/upstream-images.yaml`: public images instead of Iron Bank
   ones, for clusters without registry1 credentials. Currently it covers
-  the core-minimal set; Istio pulls from GHCR copies of the upstream images
-  (see CI below).
+  the core-minimal set; Istio pulls from `mirror.gcr.io/istio`, Google's
+  public cache of Docker Hub, which avoids Docker Hub's anonymous pull
+  limits.
 
 ```bash
 task core:deploy CORE_VALUES=dev/values/core-minimal.yaml
@@ -84,17 +84,10 @@ values.
 
 ## CI
 
-`.github/workflows/ci.yaml` runs on pushes to main and on pull requests:
-
-1. `task images:mirror` copies the images in `dev/mirror-images.txt`
-   (istio pilot and proxyv2) from docker.io into `ghcr.io/rjferguson21`,
-   skipping tags already there, and `task images:verify` checks they pull
-   anonymously (packages first published by the workflow inherit this
-   repo's public visibility; the verify step prints the settings link if
-   one ever isn't).
-2. `task ci` recreates a k3d cluster with `UPSTREAM_IMAGES=true` and deploys
-   core with the core-minimal and upstream-images overlays from the local
-   gitea, then waits for every HelmRelease to report Ready.
+`.github/workflows/ci.yaml` runs on pushes to main and on pull requests. It
+runs `task ci`, which recreates a k3d cluster with `UPSTREAM_IMAGES=true`
+and deploys core with the core-minimal and upstream-images overlays from
+the local gitea, then waits for every HelmRelease to report Ready.
 
 The workflow prints nodes, HelmReleases, Packages and pods on every run, and
 pod descriptions, logs, warning events and Flux controller logs on failure.

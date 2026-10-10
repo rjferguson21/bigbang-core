@@ -1,6 +1,0 @@
-# Upstream images the CI profile mirrors into GHCR (task images:mirror), one
-# source ref per line. The destination is GHCR_MIRROR + the path after the
-# registry, e.g. docker.io/istio/pilot:1.30.4 -> ghcr.io/rjferguson21/istio/pilot:1.30.4.
-# Keep the istio tag in step with core/istiod/chart (upstream.global.tag).
-docker.io/istio/pilot:1.30.4
-docker.io/istio/proxyv2:1.30.4

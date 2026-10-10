@@ -4,11 +4,10 @@
 #
 #   task core:deploy CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
 #
-# Istio publishes no GHCR images, so pilot/proxyv2 are mirrored from
-# docker.io/istio into GHCR by `task images:mirror` (list: dev/mirror-images.txt;
-# the ci workflow runs it before the cluster job). The hub below must match
-# the Taskfile's GHCR_MIRROR namespace; the packages must be anonymously
-# pullable (they inherit the repo's visibility when the workflow publishes them).
+# Istio only publishes to docker.io/istio (gcr.io/istio-release and
+# registry.istio.io/release retire in late 2026). mirror.gcr.io is Google's
+# public pull-through cache of Docker Hub: same digests as docker.io/istio,
+# no auth, and not subject to Docker Hub's anonymous pull limits.
 #
 # Only the core-minimal set is covered: bigbang-operator already defaults to
 # its public GHCR image, istio-crds and prometheus-operator-crds ship no
@@ -20,4 +19,4 @@ packages:
     values:
       upstream:
         global:
-          hub: ghcr.io/rjferguson21/istio
+          hub: mirror.gcr.io/istio

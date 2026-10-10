@@ -16,9 +16,8 @@ version: "3"
 #
 # UPSTREAM_IMAGES=true drops the registry1 requirement: the cluster renders
 # with bb-k3d's values-public.yaml (public Flux/MetalLB images) and core
-# should be deployed with dev/values/upstream-images.yaml in CORE_VALUES.
-# That overlay points istio at GHCR copies of the upstream images, which
-# `task images:mirror` (dev/mirror-images.txt) copies from docker.io.
+# should be deployed with dev/values/upstream-images.yaml in CORE_VALUES
+# (istio from mirror.gcr.io, Google's public cache of docker.io).
 
 vars:
   CLUSTER: bb-helm
@@ -37,10 +36,6 @@ vars:
   BB_K3D_CHART: oci://ghcr.io/rjferguson21/bb-k3d:0.3.5
   # true = no registry1 creds; render bb-k3d with its public-image values
   UPSTREAM_IMAGES: '{{.UPSTREAM_IMAGES | default "false"}}'
-  # GHCR namespace the upstream images in dev/mirror-images.txt are mirrored
-  # to (images:mirror); dev/values/upstream-images.yaml must point at it
-  GHCR_MIRROR: ghcr.io/rjferguson21
-  MIRROR_LIST: dev/mirror-images.txt
   # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
   # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
   K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
@@ -376,47 +371,8 @@ tasks:
       - task: core:deploy
       - task: packages:deploy
 
-  images:mirror:
-    desc: "Copy the upstream images in {{.MIRROR_LIST}} into {{.GHCR_MIRROR}} (multi-arch, via buildx imagetools). Needs `docker login ghcr.io` with packages:write; tags already present are skipped."
-    cmds:
-      - |
-        set -e
-        grep -vE '^\s*(#|$)' {{.MIRROR_LIST}} | while read -r src; do
-          dst="{{.GHCR_MIRROR}}/${src#*/}"
-          if docker manifest inspect "$dst" >/dev/null 2>&1; then
-            echo "present: $dst"
-            continue
-          fi
-          echo "mirror: $src -> $dst"
-          docker buildx imagetools create --tag "$dst" "$src"
-        done
-
-  images:verify:
-    desc: "Check every mirrored image in {{.MIRROR_LIST}} is pullable anonymously (packages the workflow publishes inherit the repo's visibility; one pushed by hand starts private)"
-    cmds:
-      - |
-        set -e
-        rc=0
-        grep -vE '^\s*(#|$)' {{.MIRROR_LIST}} | while read -r src; do
-          dst="{{.GHCR_MIRROR}}/${src#*/}"
-          repo="${dst#ghcr.io/}"; repo="${repo%:*}"; tag="${dst##*:}"
-          token=$(curl -s "https://ghcr.io/token?scope=repository:${repo}:pull" | sed -E 's/.*"token":"([^"]+)".*/\1/')
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
-            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/${repo}/manifests/${tag}")
-          if [ "$code" = "200" ]; then
-            echo "ok: $dst"
-          else
-            echo "NOT anonymously pullable ($code): $dst — make the package public: https://github.com/users/${repo%%/*}/packages/container/$(echo "${repo#*/}" | sed 's#/#%2F#g')/settings"
-            rc=1
-          fi
-          echo $rc > .mirror-verify-rc
-        done
-        rc=$(cat .mirror-verify-rc 2>/dev/null || echo 0); rm -f .mirror-verify-rc
-        exit $rc
-
   ci:
-    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), then deploy core-minimal with upstream images (GHCR mirrors, see images:mirror) from the local gitea"
+    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), then deploy core-minimal with upstream images from the local gitea"
     cmds:
       - task: cluster:recreate
         vars: { UPSTREAM_IMAGES: "true" }
