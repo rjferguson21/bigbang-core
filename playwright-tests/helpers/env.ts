@@ -25,6 +25,7 @@ export interface Env {
   NEUVECTOR_URL: string;
   TWISTLOCK_URL: string;
   POLICYREPORTER_URL: string;
+  GITLAB_URL: string;
   TEMPO_DATASOURCE: string;
   SAML_METADATA_URL: string;
 
@@ -46,6 +47,13 @@ export interface Env {
   NEUVECTOR_PASSWORD: string;
   TWISTLOCK_USERNAME: string;
   TWISTLOCK_PASSWORD: string;
+  GITLAB_FIRST_NAME: string;
+  GITLAB_LAST_NAME: string;
+  GITLAB_USERNAME: string;
+  GITLAB_PASSWORD: string;
+  GITLAB_EMAIL: string;
+  GITLAB_PROJECT: string;
+  GITLAB_ADMIN_PASSWORD: string;
 }
 
 const env: Env = {
@@ -61,6 +69,7 @@ const env: Env = {
   NEUVECTOR_URL: serviceUrl('NEUVECTOR_URL', 'neuvector'),
   TWISTLOCK_URL: serviceUrl('TWISTLOCK_URL', 'twistlock'),
   POLICYREPORTER_URL: serviceUrl('POLICYREPORTER_URL', 'policyreporter'),
+  GITLAB_URL: serviceUrl('GITLAB_URL', 'gitlab'),
   // Loki and Tempo are validated through Grafana; the Tempo datasource address
   // is kept for parity with the old cypress envs (cypress_tempo_datasource).
   TEMPO_DATASOURCE: process.env.TEMPO_DATASOURCE || 'http://tempo-tempo.tempo.svc:3200',
@@ -86,6 +95,13 @@ const env: Env = {
   NEUVECTOR_PASSWORD: process.env.NEUVECTOR_PASSWORD || 'admin', // fresh consoles: factory default + forced reset modal
   TWISTLOCK_USERNAME: process.env.TWISTLOCK_USERNAME || 'admin',
   TWISTLOCK_PASSWORD: process.env.TWISTLOCK_PASSWORD || 'change_this_password',
+  GITLAB_FIRST_NAME: process.env.GITLAB_FIRST_NAME || 'test',
+  GITLAB_LAST_NAME: process.env.GITLAB_LAST_NAME || 'user',
+  GITLAB_USERNAME: process.env.GITLAB_USERNAME || 'testuser',
+  GITLAB_PASSWORD: process.env.GITLAB_PASSWORD || 'Password123h56a78',
+  GITLAB_EMAIL: process.env.GITLAB_EMAIL || 'testuser@example.com',
+  GITLAB_PROJECT: process.env.GITLAB_PROJECT || 'my-awesome-project',
+  GITLAB_ADMIN_PASSWORD: process.env.GITLAB_ADMIN_PASSWORD || '', // root password; discovered from the cluster secret
 };
 
 export default env;

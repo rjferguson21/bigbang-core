@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: optional workload images use Registry1
+templates:
+  - charts/upstream/charts/gitlab/charts/gitaly/templates/statefulset.yml
+  - charts/upstream/charts/gitlab/charts/gitaly/templates/configmap.yml
+  - charts/upstream/charts/gitlab/charts/geo-logcursor/templates/deployment.yaml
+  - charts/upstream/charts/gitlab/charts/geo-logcursor/templates/configmap.yml
+  - charts/upstream/charts/openbao/templates/deployment.yaml
+  - charts/upstream/charts/openbao/templates/configmap.yaml
+  - charts/upstream/charts/gitlab-zoekt/templates/deployment.yaml
+  - charts/upstream/charts/gitlab-zoekt/templates/deployment-nginx-configmap.yaml
+  - charts/upstream/charts/gitlab-zoekt/templates/stateful_sets.yaml
+  - charts/upstream/charts/gitlab-zoekt/templates/nginx-configmap.yaml
+set:
+  upstream.gitlab.gitaly.cgroups.enabled: true
+  global.geo.enabled: true
+  global.geo.role: secondary
+  global.geo.psql.host: postgresql.example.internal
+  global.geo.psql.port: 5432
+  global.geo.psql.database: gitlabhq_geo_production
+  global.geo.psql.username: gitlab
+  global.geo.psql.password.secret: gitlab-postgresql-app
+  global.geo.psql.password.key: password
+  upstream.openbao.install: true
+  global.openbao.enabled: true
+  global.openbao.psql.host: postgresql.example.internal
+  global.openbao.psql.port: 5432
+  global.openbao.psql.database: openbao
+  global.openbao.psql.username: openbao
+  global.openbao.psql.password.secret: openbao-postgresql
+  global.openbao.psql.password.key: password
+  upstream.gitlab-zoekt.install: true
+tests:
+  - it: uses the VP cgroups init image for Gitaly
+    template: charts/upstream/charts/gitlab/charts/gitaly/templates/statefulset.yml
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          any: true
+          content:
+            name: init-cgroups
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly-init-cgroups:v19.3.2-ubi
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: private-registry
+  - it: uses the VP Geo log cursor image
+    template: charts/upstream/charts/gitlab/charts/geo-logcursor/templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          any: true
+          content:
+            name: dependencies
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-geo-logcursor:v19.3.2-ubi
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: geo-logcursor
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-geo-logcursor:v19.3.2-ubi
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: private-registry
+  - it: uses the VP OpenBao image and private pull secret
+    template: charts/upstream/charts/openbao/templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: openbao-server
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-openbao:v2.5.5-gitlab2-ubi
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: private-registry
+  - it: uses VP Zoekt images and the Iron Bank internal gateway image
+    template: charts/upstream/charts/gitlab-zoekt/templates/stateful_sets.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: zoekt-indexer
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-zoekt:v19.2.1-ubi
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: zoekt-webserver
+            image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-zoekt:v19.2.1-ubi
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: zoekt-internal-gateway
+            image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.31.5
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: private-registry
+  - it: uses the Iron Bank external Zoekt gateway image
+    template: charts/upstream/charts/gitlab-zoekt/templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          any: true
+          content:
+            name: zoekt-external-gateway
+            image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.31.5
+      - contains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: private-registry

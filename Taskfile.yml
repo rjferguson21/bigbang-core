@@ -1,0 +1,354 @@
+version: "3"
+
+# Dev harness for bigbang-core. Creates a k3d cluster from the bb-k3d chart
+# (MetalLB + Flux bootstrap, registry1 pull-through cache), then deploys the
+# core stack (operator, CRDs, Istio, Kyverno, observability) and the app
+# packages.
+#
+#   task (= up)                     # full stack: recreate cluster + core + all packages
+#   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
+#   task packages:deploy            # app packages via helm (core must be up)
+#   task down                       # delete the cluster
+#
+# With no REPO_URL, core:deploy/up auto-run gitea:up (a local gitea on the
+# cluster network seeded from the working tree) and deploy from it.
+
+vars:
+  CLUSTER: bb-helm
+  CTX: k3d-bb-helm
+  NAMESPACE: bigbang-operator
+  RELEASE: bigbang-operator
+  # Flux source for `core:deploy` (and `up`) — the git repo source-controller
+  # pulls the core charts from. Must be reachable from the cluster.
+  REPO_URL: '{{.REPO_URL | default ""}}'
+  TARGET_REVISION: '{{.TARGET_REVISION | default "main"}}'
+  FLUX_NAMESPACE: '{{.FLUX_NAMESPACE | default "flux-system"}}'
+  # In-cluster URL of the local dev gitea (see gitea:up) — use as REPO_URL
+  GITEA_REPO_URL: http://gitea:3000/tester/bigbang-core.git
+  # The bbtask bb-k3d chart: renders the k3d Simple config plus the bootstrap
+  # manifests (MetalLB + Flux) that k3d injects into the k3s server.
+  BB_K3D_CHART: oci://ghcr.io/rjferguson21/bb-k3d:0.3.5
+  # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
+  # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
+  K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
+  # Local umbrella checkout — source of the dev gateway TLS cert
+  BIGBANG_REPO: /home/rob/bb/bigbang
+  # pipeline-templates checkout — provides the CI dependency stack (gitlab:deps)
+  PIPELINE_TEMPLATES_REPO: /home/rob/bb/pipeline-templates
+
+tasks:
+  default:
+    desc: "Full stack from scratch (alias for up)"
+    cmds:
+      - task: up
+
+  cluster:create:
+    desc: Create the dev k3d cluster from the bb-k3d chart (no-op if it already exists)
+    status:
+      - k3d cluster list {{.CLUSTER}}
+    cmds:
+      - task: cluster:recreate
+
+  cluster:recreate:
+    desc: "(Re)create the dev k3d cluster from the bb-k3d chart (MetalLB + Flux bootstrap, registry1 pull-through cache)."
+    preconditions:
+      - sh: test -n "$REGISTRY1_USERNAME" && test -n "$REGISTRY1_PASSWORD"
+        msg: "REGISTRY1_USERNAME/REGISTRY1_PASSWORD must be set (registry1 pull-through cache creds)"
+    cmds:
+      - k3d cluster delete {{.CLUSTER}} 2>/dev/null || true
+      - k3d registry delete repo1 2>/dev/null || true
+      # Render the chart; k3d resolves the injected bootstrap.yaml relative to
+      # the config file, so both land in k3d/.rendered/
+      - |
+        mkdir -p k3d/.rendered {{.K3D_VOLUME_DIR}}/cypress
+        echo "*" > k3d/.rendered/.gitignore
+        helm template k3d {{.BB_K3D_CHART}} \
+          --set k3d.serverIP=0.0.0.0 \
+          --set k3d.metricsServer=true \
+          --set k3d.volumeBaseDir={{.K3D_VOLUME_DIR}} \
+          --set registry1.username=$REGISTRY1_USERNAME \
+          --set registry1.password=$REGISTRY1_PASSWORD \
+          > k3d/.rendered/bootstrap.yaml
+        yq 'select(.kind == "Simple")' k3d/.rendered/bootstrap.yaml > k3d/.rendered/k3d.yaml
+      - k3d cluster create --config k3d/.rendered/k3d.yaml
+      # Wait for the bootstrapped Flux controllers (installed by the k3s
+      # deploy controller from the injected manifests). bb-k3d puts them in
+      # the default namespace; they watch all namespaces, so the core objects
+      # can still live in FLUX_NAMESPACE.
+      - |
+        until kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o name 2>/dev/null | grep -q helm-controller; do sleep 3; done
+        ns=$(kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o jsonpath='{.items[0].metadata.namespace}')
+        for d in $(kubectl --context {{.CTX}} -n "$ns" get deploy -l app.kubernetes.io/part-of=flux -o name); do
+          kubectl --context {{.CTX}} -n "$ns" rollout status "$d" --timeout=300s
+        done
+
+  cluster:delete:
+    desc: Delete the test k3d cluster
+    cmds:
+      - k3d cluster delete {{.CLUSTER}}
+
+  gitea:up:
+    desc: "Stand up a local gitea on the cluster network and push the working tree, so Flux has a reachable REPO_URL ({{.GITEA_REPO_URL}})"
+    vars:
+      NET: 'k3d-{{.CLUSTER}}'
+    cmds:
+      - |
+        set -e
+        # 1. gitea container on the cluster network (idempotent)
+        docker start gitea 2>/dev/null || docker run -d --name gitea --network {{.NET}} \
+          -e GITEA__security__INSTALL_LOCK=true \
+          -e GITEA__server__ROOT_URL=http://gitea:3000/ \
+          -e GITEA__server__DISABLE_SSH=true \
+          -e GITEA__service__DISABLE_REGISTRATION=true \
+          gitea/gitea:1.22 >/dev/null
+        docker network connect {{.NET}} gitea 2>/dev/null || true
+        # 2. wait until ready
+        until docker exec gitea sh -c 'wget -qO- http://localhost:3000/api/healthz 2>/dev/null | grep -q pass'; do sleep 2; done
+        # 3. admin user + public repo (idempotent)
+        docker exec -u git gitea gitea admin user create --admin --username tester --password test1234 \
+          --email t@t.dev --must-change-password=false 2>/dev/null || true
+        docker exec gitea sh -c "curl -s -u tester:test1234 -X POST http://localhost:3000/api/v1/user/repos \
+          -H 'Content-Type: application/json' -d '{\"name\":\"bigbang-core\",\"private\":false}'" >/dev/null 2>&1 || true
+        # 4. push the current working tree to main
+        snap=$(mktemp -d)
+        rsync -a --delete --exclude .git --exclude node_modules --exclude test-results ./ "$snap"/
+        git -C "$snap" -c init.defaultBranch=main init -q
+        git -C "$snap" -c user.email=dev@local -c user.name=dev add -A
+        git -C "$snap" -c user.email=dev@local -c user.name=dev commit -qm "working tree snapshot"
+        docker run --rm --network {{.NET}} -v "$snap":/src -w /src \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
+          alpine/git push -f http://tester:test1234@gitea:3000/tester/bigbang-core.git main
+        rm -rf "$snap"
+      - |
+        echo "pushed. deploy core with: task core:deploy REPO_URL={{.GITEA_REPO_URL}}"
+
+  gitea:down:
+    desc: Remove the local dev gitea container
+    cmds:
+      - docker rm -f gitea 2>/dev/null || true
+
+  gitlab:deps:reset:
+    desc: "Wipe the dependency stack's data volumes. REQUIRED after a cluster recreate: gitlab's rails encryption keys are regenerated with the cluster, so a database from a previous cluster fails with OpenSSL::Cipher::CipherError"
+    cmds:
+      - CI_DEPENDENCY_NETWORK=k3d-{{.CLUSTER}} {{.PIPELINE_TEMPLATES_REPO}}/ci/dependencies/manage.sh reset
+
+  gitlab:deps:
+    desc: "Stand up gitlab's external services (postgres/garage/valkey on the cluster network, via the CI dependency stack) and create the connection secrets the umbrella normally renders"
+    cmds:
+      - |
+        CI_DEPENDENCY_NETWORK=k3d-{{.CLUSTER}} K3D_DOCKER_SUBNET=172.28.250.0/24 \
+        CI_POSTGRES_DATABASES=gitlabhq_production \
+        CI_GARAGE_BUCKETS=ci-gitlab-registry,ci-gitlab-lfs,ci-gitlab-artifacts,ci-gitlab-uploads,ci-gitlab-packages,ci-gitlab-mr-diffs,ci-gitlab-terraform-state,ci-gitlab-dependency-proxy,ci-gitlab-pseudo,ci-gitlab-backup,ci-gitlab-backup-tmp \
+        {{.PIPELINE_TEMPLATES_REPO}}/ci/dependencies/manage.sh up
+      - kubectl --context {{.CTX}} create namespace gitlab --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - kubectl --context {{.CTX}} -n gitlab create secret generic gitlab-database --from-literal=PGPASSWORD=ci-only-password --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - kubectl --context {{.CTX}} -n gitlab create secret generic gitlab-redis-secret-bb --from-literal=secret=ci-only-password --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - |
+        kubectl --context {{.CTX}} apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: gitlab-object-storage
+          namespace: gitlab
+        type: kubernetes.io/opaque
+        stringData:
+          rails: |-
+            provider: AWS
+            region: garage
+            aws_access_key_id: GKbb0000000000000000000000
+            aws_secret_access_key: bb00000000000000000000000000000000000000000000000000000000000000
+            endpoint: "http://garage:3900"
+            aws_signature_version: 4
+            path_style: true
+          registry: |-
+            s3:
+              bucket: ci-gitlab-registry
+              accesskey: GKbb0000000000000000000000
+              secretkey: bb00000000000000000000000000000000000000000000000000000000000000
+              regionendpoint: "http://garage:3900"
+              secure: false
+              region: garage
+              v4auth: true
+              pathstyle: true
+          backups: |-
+            [default]
+            access_key = GKbb0000000000000000000000
+            secret_key = bb00000000000000000000000000000000000000000000000000000000000000
+            host_base = garage:3900
+            host_bucket = garage:3900
+            use_https = False
+            bucket_location = garage
+            multipart_chunk_size_mb = 128
+        EOF
+
+  gitlab:deploy:
+    desc: "Deploy the gitlab package (release name matches the umbrella's; run gitlab:deps first on a fresh cluster)"
+    cmds:
+      - task: gitlab:deps
+      - task: package:deploy
+        vars: { PKG: gitlab, RELEASE: gitlab, NS: gitlab, PKGDIR: packages, EXTRA: "--timeout 30m" }
+
+  registry:secret:
+    desc: Create the private-registry pull secret in NS (from REGISTRY1_* env, or copied from the bb-helm cluster)
+    requires:
+      vars: [NS]
+    cmds:
+      - kubectl --context {{.CTX}} create namespace {{.NS}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - |
+        if [ -n "${REGISTRY1_USERNAME:-}" ]; then
+          kubectl --context {{.CTX}} -n {{.NS}} create secret docker-registry private-registry \
+            --docker-server=registry1.dso.mil \
+            --docker-username="$REGISTRY1_USERNAME" --docker-password="$REGISTRY1_PASSWORD" \
+            --dry-run=client -o yaml | kubectl --context {{.CTX}} -n {{.NS}} apply -f -
+        else
+          echo "REGISTRY1_USERNAME not set; skipping pull secret (the k3d pull-through cache covers registry1)"
+        fi
+
+  package:deploy:
+    desc: "Deploy one package with helm: task package:deploy PKG=kiali RELEASE=kiali NS=kiali [PKGDIR=packages]"
+    requires:
+      vars: [PKG, RELEASE, NS]
+    vars:
+      PKGDIR: '{{.PKGDIR | default "packages"}}'
+    cmds:
+      - task: registry:secret
+        vars: { NS: "{{.NS}}" }
+      - >-
+        helm --kube-context {{.CTX}} upgrade --install {{.RELEASE}} {{.PKGDIR}}/{{.PKG}}/chart
+        -n {{.NS}} --force-conflicts
+        --set domain=dev.bigbang.mil
+        --set bigbangPackage.istio.enabled=true
+        --set bigbangPackage.networkPolicies.enabled=true
+        {{if .EXTRA}}{{.EXTRA}}{{end}}
+        $(test -f dev/values/{{.PKG}}.yaml && echo "-f dev/values/{{.PKG}}.yaml")
+        {{if eq .IGNORE_ERROR "true"}}|| true{{end}}
+
+  core:flux:
+    desc: "Ensure Flux is present in some namespace (the k3d bootstrap installs it; this is a fallback for clusters without it, into flux-system)"
+    status:
+      - test -n "$(kubectl --context {{.CTX}} get deploy -A -l app.kubernetes.io/part-of=flux -o name 2>/dev/null)"
+    cmds:
+      - kubectl --context {{.CTX}} apply -f https://github.com/fluxcd/flux2/releases/latest/download/install.yaml
+      - |
+        for d in $(kubectl --context {{.CTX}} -n flux-system get deploy -o name); do
+          kubectl --context {{.CTX}} -n flux-system rollout status "$d" --timeout=300s
+        done
+
+  core:deploy:
+    desc: "Deploy the core stack (operator, CRDs, Istio, Kyverno, observability) via Flux HelmReleases. Uses REPO_URL if set, else stands up a local gitea (gitea:up)."
+    vars:
+      # explicit REPO_URL wins; otherwise fall back to the local dev gitea
+      SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
+      # optional overrides file for the core chart (e.g. dev/values/core-minimal.yaml)
+      CORE_VALUES: '{{.CORE_VALUES | default ""}}'
+    cmds:
+      - task: core:flux
+      # Namespace for the GitRepository + HelmReleases (the controllers may
+      # run elsewhere; they watch all namespaces)
+      - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      # Core chart overrides: the parent HelmRelease reads the optional
+      # bigbang-core-values ConfigMap; populate it from CORE_VALUES or remove
+      # it so a previous profile doesn't linger
+      - |
+        if [ -n "{{.CORE_VALUES}}" ]; then
+          kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} create configmap bigbang-core-values \
+            --from-file=values.yaml={{.CORE_VALUES}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+        else
+          kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} delete configmap bigbang-core-values --ignore-not-found
+        fi
+      # No REPO_URL given → seed the local gitea with the working tree and use it
+      - |
+        if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
+      # Gateway TLS: the public dev wildcard cert for *.dev.bigbang.mil (the
+      # same one the umbrella ships in chart/ingress-certs.yaml); the gateway
+      # servers reference credentialName public-cert
+      - |
+        certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
+        if [ -f "$certs" ] && ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
+          kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+          tmp=$(mktemp -d)
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+          kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
+          rm -rf "$tmp"
+        fi
+      # Apply the GitRepository + parent HelmRelease; the parent renders the
+      # child HelmReleases, which helm-controller reconciles in dependsOn order.
+      - |
+        export REPO_URL="{{.SRC_URL}}" TARGET_REVISION="{{.TARGET_REVISION}}" FLUX_NAMESPACE="{{.FLUX_NAMESPACE}}"
+        envsubst < core/bigbang-core.yaml | kubectl --context {{.CTX}} apply -f -
+      # The parent creates the child HelmReleases progressively (per dependsOn
+      # chain), so a plain `wait --all` returns early (only the parent exists
+      # at t=0). Poll until every enabled package's HelmRelease reports Ready.
+      - |
+        ns={{.FLUX_NAMESPACE}}
+        # count the child releases the chart renders (exclude the parent),
+        # honoring the CORE_VALUES overlay when one is in play
+        if [ -n "{{.CORE_VALUES}}" ]; then
+          expected=$(yq eval-all 'select(fileIndex==0) * select(fileIndex==1) | [.packages[] | select(.enabled != false)] | length' core/values.yaml "{{.CORE_VALUES}}")
+        else
+          expected=$(yq '[.packages[] | select(.enabled != false)] | length' core/values.yaml)
+        fi
+        echo "waiting for $expected core HelmReleases to be Ready..."
+        deadline=$(( $(date +%s) + 900 ))
+        while :; do
+          ready=$(kubectl --context {{.CTX}} -n $ns get helmreleases \
+            -o jsonpath='{range .items[*]}{.metadata.name}{":"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
+            | grep -v '^bigbang-core:' | grep -c ':True$' || true)
+          echo "  $ready/$expected HelmReleases Ready"
+          [ "$ready" -ge "$expected" ] && break
+          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core HelmReleases"; kubectl --context {{.CTX}} -n $ns get helmreleases; exit 1; }
+          sleep 10
+        done
+      - kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} get helmreleases
+
+  packages:deploy:
+    desc: Deploy the app packages with helm (assumes core is already deployed via core:deploy)
+    cmds:
+      - task: package:deploy
+        vars: { PKG: eck-operator, RELEASE: eck-operator, NS: eck-operator }
+      - kubectl --context {{.CTX}} -n eck-operator rollout status sts/elastic-operator --timeout=180s
+      - task: package:deploy
+        vars: { PKG: elasticsearch-kibana, RELEASE: logging-ek, NS: logging, EXTRA: "--timeout 15m" }
+      - task: package:deploy
+        vars: { PKG: fluentbit, RELEASE: fluentbit, NS: fluentbit }
+      - task: package:deploy
+        vars: { PKG: tempo, RELEASE: tempo-tempo, NS: tempo }
+      - task: package:deploy
+        vars: { PKG: kiali, RELEASE: kiali, NS: kiali }
+      - task: package:deploy
+        vars: { PKG: keycloak, RELEASE: keycloak-keycloak, NS: keycloak }
+      - task: package:deploy
+        vars: { PKG: neuvector, RELEASE: neuvector, NS: neuvector }
+      - task: package:deploy
+        vars: { PKG: twistlock, RELEASE: twistlock, NS: twistlock }
+      - task: packages:status
+
+  packages:status:
+    desc: Show Package CR and pod readiness across all package namespaces
+    cmds:
+      - kubectl --context {{.CTX}} get packages -A
+      - kubectl --context {{.CTX}} get pods -A --no-headers | grep -vE "Running|Completed" || echo "all pods running"
+
+  logs:
+    desc: Tail operator logs
+    cmds:
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} logs -f deploy/{{.RELEASE}}-bigbang-operator
+
+  status:
+    desc: Show operator and Package status on the test cluster
+    cmds:
+      - kubectl --context {{.CTX}} -n {{.NAMESPACE}} get pods
+      - kubectl --context {{.CTX}} get packages -A
+
+  down:
+    desc: Alias for cluster:delete
+    cmds:
+      - task: cluster:delete
+
+  up:
+    desc: "Full stack from scratch — recreate cluster, deploy core via Flux, then app packages. Set REPO_URL to use a real remote; otherwise a local gitea is used."
+    cmds:
+      - task: cluster:recreate
+      - task: core:deploy
+      - task: packages:deploy

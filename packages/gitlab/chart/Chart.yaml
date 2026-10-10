@@ -1,0 +1,92 @@
+apiVersion: v2
+name: gitlab
+version: 10.3.2-bb.1
+appVersion: 19.3.2
+description: GitLab is the most comprehensive AI-powered DevSecOps Platform. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
+keywords:
+- gitlab
+home: https://about.gitlab.com/
+icon: https://gitlab.com/gitlab-com/gitlab-artwork/raw/master/logo/logo-square.png
+sources:
+- https://gitlab.com/gitlab-org/charts/gitlab
+dependencies:
+- name: gitlab
+  version: 10.3.2
+  repository: https://charts.gitlab.io
+  alias: upstream
+- name: gluon
+  version: "1.1.7"
+  repository: "oci://registry1.dso.mil/bigbang"
+annotations:
+  bigbang.dev/maintenanceTrack: bb_integrated
+  bigbang.dev/upstreamReleaseNotesMarkdown: |
+    The [upstream chart's release notes](https://gitlab.com/gitlab-org/charts/gitlab/-/blob/master/CHANGELOG.md) may help when reviewing this package.
+  helm.sh/images: |
+    - name: cypress
+      condition: bbtests.enabled
+      image: registry1.dso.mil/ironbank/big-bang/cypress:16.0.0
+    - name: certificates
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/certificates:v19.3.2-ubi
+    - name: cfssl-self-sign
+      condition: upstream.shared-secrets.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/cfssl-self-sign:v19.3.2-ubi
+    - name: gitaly
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly:v19.3.2-ubi
+    - name: gitaly-init-cgroups
+      condition: upstream.gitlab.gitaly.cgroups.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitaly-init-cgroups:v19.3.2-ubi
+    - name: gitlab-container-registry
+      condition: upstream.registry.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-container-registry:v4.40.2-gitlab-ubi
+    - name: gitlab-shell
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-shell:v14.56.1-ubi
+    - name: gitlab-sidekiq
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-sidekiq-ee:v19.3.2-ubi
+    - name: gitlab-toolbox
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-toolbox-ee:v19.3.2-ubi
+    - name: gitlab-webservice
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-webservice-ee:v19.3.2-ubi
+    - name: gitlab-workhorse
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-workhorse-ee:v19.3.2-ubi
+    - name: gitlab-pages
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-pages:v19.3.2-ubi
+    - name: kubectl
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/kubectl:v19.3.2-ubi
+    - name: ubi9
+      condition: upgradeCheck.enabled
+      image: registry1.dso.mil/ironbank/redhat/ubi/ubi9:9.8
+    - name: gitlab-base
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-base:v19.3.2-ubi
+    - name: gitlab-exporter
+      condition: upstream.gitlab.gitlab-exporter.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-exporter:16.9.0-ubi
+    - name: gitlab-geo-logcursor
+      condition: global.geo.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-geo-logcursor:v19.3.2-ubi
+    - name: gitlab-openbao
+      condition: upstream.openbao.install
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-openbao:v2.5.5-gitlab2-ubi
+    - name: gitlab-ai-gateway
+      condition: upstream.ai-gateway.install
+      image: registry1.dso.mil/gitlab/gitlab-org/modelops/applied-ml/code-suggestions/ai-assist/model-gateway:self-hosted-v19.2.0-ee
+    - name: gitlab-ai-gateway-test
+      condition: upstream.ai-gateway.test.enabled
+      image: registry1.dso.mil/ironbank/afdco/docker/busybox:1.37.0
+    - name: gitlab-ai-gateway-grpc-tls-proxy
+      condition: upstream.ai-gateway.grpc-tls-proxy.enabled
+      image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.31.5
+    - name: gitlab-zoekt
+      condition: upstream.gitlab-zoekt.install
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-zoekt:v19.2.1-ubi
+    - name: gitlab-zoekt-gateway
+      condition: upstream.gitlab-zoekt.install
+      image: registry1.dso.mil/ironbank/opensource/nginx/nginx:1.31.5
+    - name: bbtests
+      condition: bbtests.enabled
+      image: registry1.dso.mil/ironbank/big-bang/devops-tester:1.3
+    - name: gitlab-mailroom
+      condition: global.appConfig.incomingEmail.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-mailroom:v19.3.2-ubi
+    - name: gitlab-kas
+      condition: global.kas.enabled
+      image: registry1.dso.mil/gitlab/gitlab-org/build/cng/gitlab-kas:v19.3.2-ubi

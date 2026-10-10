@@ -1,0 +1,18 @@
+# The package charts live under core/<pkg>/chart and are delivered as their
+# own HelmChart artifacts by path — keep them (and everything else that isn't
+# the parent chart) out of the parent's package, or the release secret
+# exceeds etcd's request limit.
+alloy/
+bigbang-operator/
+grafana/
+istio-crds/
+istio-gateway/
+istiod/
+kyverno/
+kyverno-policies/
+kyverno-reporter/
+loki/
+monitoring/
+prometheus-operator-crds/
+bigbang-core.yaml
+README.md

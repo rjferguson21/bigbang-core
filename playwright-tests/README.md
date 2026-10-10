@@ -2,7 +2,7 @@
 
 Shared Playwright end-to-end test suite for the Big Bang core packages. These
 tests replace the per-package cypress tests that were previously embedded in
-each package chart (`<pkg>-bb-package/chart/tests/cypress/e2e/`) and run
+each package chart (`<pkg>/chart/tests/cypress/e2e/`) and run
 against an already-deployed cluster.
 
 The dev/CI clusters use self-signed certificates, so the Playwright config
@@ -44,6 +44,7 @@ are injected).
 |---|---|
 | `tests/alloy.spec.ts` | alloy `01-validate-service-monitors.cy.js` |
 | `tests/elasticsearch-kibana.spec.ts` | elasticsearch-kibana `01-kibana-health.cy.js` |
+| `tests/gitlab.spec.ts` | gitlab `01-gitlab-health-spec.cy.js` |
 | `tests/grafana.spec.ts` | grafana `01-grafana-healthspec.cy.js` |
 | `tests/keycloak.spec.ts` | keycloak `keycloak-health.spec.cy.js` |
 | `tests/kyverno-reporter.spec.ts` | kyverno-reporter `01-grafana.cy.js`, `01-policyreporter.cy.js` |
@@ -71,6 +72,7 @@ All URLs default to the in-cluster-external (VirtualService) route on
 | `NEUVECTOR_URL` | `https://neuvector.$DOMAIN` | `cypress_url` (neuvector) |
 | `TWISTLOCK_URL` | `https://twistlock.$DOMAIN` | `cypress_twistlock_url` |
 | `POLICYREPORTER_URL` | `https://policyreporter.$DOMAIN` | `cypress_policyreporter_ui` |
+| `GITLAB_URL` | `https://gitlab.$DOMAIN` | `cypress_url` (gitlab) |
 | `TEMPO_DATASOURCE` | `http://tempo-tempo.tempo.svc:3200` | `cypress_tempo_datasource` (unused by the tests, kept for parity) |
 | `SAML_METADATA_URL` | *(unset — skips the Twistlock SAML cert sync)* | `cypress_saml_metadata_url` |
 | `BIGBANG_INTEGRATION` | `true` | `cypress_bigbang_integration` |
@@ -87,4 +89,11 @@ All URLs default to the in-cluster-external (VirtualService) route on
 | `NEUVECTOR_PASSWORD` | `admin` | `cypress_password` — NeuVector 5.5+ generates a random bootstrap password; set from the cluster: `kubectl get secret neuvector-bootstrap-secret -n neuvector -o jsonpath='{.data.bootstrapPassword}' \| base64 -d` |
 | `TWISTLOCK_USERNAME` | `admin` | `cypress_user` (twistlock) |
 | `TWISTLOCK_PASSWORD` | `change_this_password` | `cypress_password` (twistlock) |
+| `GITLAB_FIRST_NAME` | `test` | `cypress_gitlab_first_name` |
+| `GITLAB_LAST_NAME` | `user` | `cypress_gitlab_last_name` |
+| `GITLAB_USERNAME` | `testuser` | `cypress_gitlab_username` |
+| `GITLAB_PASSWORD` | `Password123h56a78` | `cypress_gitlab_password` |
+| `GITLAB_EMAIL` | `testuser@example.com` | `cypress_gitlab_email` |
+| `GITLAB_PROJECT` | `my-awesome-project` | `cypress_gitlab_project` |
+| `GITLAB_ADMIN_PASSWORD` | *(empty — discovered from the `gitlab-gitlab-initial-root-password` secret)* | `cypress_adminpassword` |
 | `RETRIES` | `2` | per-spec cypress `retries` config |
