@@ -39,8 +39,10 @@ vars:
   # Host dir for the chart's volume mounts; reuses the Big Bang dev registry
   # cache (<dir>/reg) so the registry1 pull-through cache stays warm.
   K3D_VOLUME_DIR: /home/rob/bb/bigbang/dev
-  # Local umbrella checkout — source of the dev gateway TLS cert
+  # Local umbrella checkout — source of the dev gateway TLS cert; when it is
+  # absent the cert is downloaded from the umbrella repo instead
   BIGBANG_REPO: /home/rob/bb/bigbang
+  BIGBANG_CERTS_URL: https://repo1.dso.mil/big-bang/bigbang/-/raw/master/chart/ingress-certs.yaml
   # pipeline-templates checkout — provides the CI dependency stack (gitlab:deps)
   PIPELINE_TEMPLATES_REPO: /home/rob/bb/pipeline-templates
 
@@ -279,24 +281,21 @@ tasks:
       - |
         if [ -z "{{.REPO_URL}}" ]; then task gitea:up; fi
       # Gateway TLS: the gateway servers reference credentialName public-cert.
-      # Use the public dev wildcard cert for *.dev.bigbang.mil the umbrella
-      # ships in chart/ingress-certs.yaml when that checkout exists; otherwise
-      # (CI) mint a self-signed wildcard so the HTTPS listener still comes up
-      # (the playwright suite ignores TLS errors).
+      # The umbrella ships the public dev wildcard cert for *.dev.bigbang.mil
+      # in chart/ingress-certs.yaml; read it from the local checkout when
+      # present, otherwise download it from the umbrella repo (CI).
       - |
         if ! kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then
           kubectl --context {{.CTX}} create namespace istio-gateway --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
           tmp=$(mktemp -d)
           certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
-          if [ -f "$certs" ]; then
-            yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
-            yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
-          else
-            echo "no umbrella checkout at $certs; using a self-signed *.dev.bigbang.mil cert"
-            openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=*.dev.bigbang.mil" \
-              -addext "subjectAltName=DNS:*.dev.bigbang.mil,DNS:dev.bigbang.mil" \
-              -keyout "$tmp/tls.key" -out "$tmp/tls.crt" 2>/dev/null
+          if [ ! -f "$certs" ]; then
+            echo "no umbrella checkout at $certs; downloading {{.BIGBANG_CERTS_URL}}"
+            certs="$tmp/ingress-certs.yaml"
+            curl -fsSL -o "$certs" "{{.BIGBANG_CERTS_URL}}"
           fi
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
           kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
           rm -rf "$tmp"
         fi

@@ -91,8 +91,9 @@ deploys core with the core-minimal and upstream-images overlays from the
 local gitea, waits for every HelmRelease to report Ready, then deploys the
 kiali package with its `dev/values/upstream/kiali.yaml` overlay. It then
 installs the Playwright suite and runs `tests/kiali.spec.ts` against the
-cluster (the gateway serves a self-signed wildcard cert when the umbrella
-checkout isn't present). Traces are uploaded on failure.
+cluster (the gateway's `*.dev.bigbang.mil` cert is downloaded from the
+umbrella repo when no local checkout is present). Traces are uploaded on
+failure.
 
 The workflow prints nodes, HelmReleases, Packages and pods on every run, and
 pod descriptions, logs, warning events and Flux controller logs on failure.
