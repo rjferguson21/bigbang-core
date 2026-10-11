@@ -424,7 +424,7 @@ tasks:
         set -eo pipefail
         kubectl --context {{.CTX}} create namespace ambient-test --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
         kubectl --context {{.CTX}} label namespace ambient-test istio.io/dataplane-mode=ambient --overwrite
-        kubectl --context {{.CTX}} -n ambient-test run ambient-probe --image=registry.k8s.io/pause:3.9 --restart=Never --overwrite
+        kubectl --context {{.CTX}} -n ambient-test run ambient-probe --image=registry.k8s.io/pause:3.9 --restart=Never
         kubectl --context {{.CTX}} -n ambient-test wait --for=condition=Ready pod/ambient-probe --timeout=120s
         redir=$(kubectl --context {{.CTX}} -n ambient-test get pod ambient-probe -o jsonpath='{.metadata.annotations.ambient\.istio\.io/redirection}')
         echo "ambient-probe redirection annotation: '${redir}'"

@@ -12,14 +12,26 @@
 # Only the core-minimal set is covered: bigbang-operator already defaults to
 # its public GHCR image, istio-crds and prometheus-operator-crds ship no
 # images, and the istio-gateway pod's image is "auto" (istiod's injector
-# rewrites it from the hub below). The full profile (kyverno, monitoring,
-# loki, grafana, alloy) still pulls from registry1.
+# rewrites it from the hub below). The ambient data plane (istio-cni, ztunnel)
+# is covered too since it deploys under core-minimal when ambient is enabled.
+# The full profile (kyverno, monitoring, loki, grafana, alloy) still pulls
+# from registry1.
 packages:
   istiod:
     values:
       upstream:
         global:
           hub: mirror.gcr.io/istio
+  # istio-cni honors global.hub; ztunnel takes a top-level hub.
+  istio-cni:
+    values:
+      upstream:
+        global:
+          hub: mirror.gcr.io/istio
+  ztunnel:
+    values:
+      upstream:
+        hub: mirror.gcr.io/istio
   istio-gateway:
     values:
       # The gluon post-install wait job (a helm hook, so the HelmRelease is
