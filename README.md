@@ -21,7 +21,7 @@ One task creates the cluster and deploys the core stack (no app packages):
 task core:up
 
 # No creds — minimal core (operator, CRDs, Istio) on public images, fast:
-task core:up UPSTREAM_IMAGES=true CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
+task core:up UPSTREAM_IMAGES=true PROFILE=minimal CORE_VALUES=dev/values/upstream-images.yaml
 
 task status      # operator pods + Package CRs
 task down        # delete the cluster
