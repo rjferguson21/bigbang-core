@@ -11,7 +11,7 @@ sets `ignoreHTTPSErrors: true`.
 ## Running
 
 ```bash
-cd playwright-tests
+cd tests
 npm ci
 npx playwright install chromium
 

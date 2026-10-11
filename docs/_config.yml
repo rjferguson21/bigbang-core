@@ -1,0 +1,3 @@
+title: bigbang-core
+description: A Big Bang built on the bigbang-operator instead of bb-common.
+theme: jekyll-theme-cayman
