@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "bigbang-core values",
+  "description": "Values for the bigbang-core parent chart, which renders one Flux HelmRelease per entry in `packages` plus the labeled namespaces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["domain", "packages"],
+  "properties": {
+    "domain": {
+      "type": "string",
+      "description": "Base domain for exposed services; merged into every package's values."
+    },
+    "istio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ambient": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable ambient mesh: deploy istio-cni + ztunnel, run istiod with ambient/HBONE, set istio.ambient.enabled on every Package CR, and label mesh namespaces istio.io/dataplane-mode=ambient."
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Flux source the child HelmReleases pull their charts from.",
+      "properties": {
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    },
+    "flux": {
+      "type": "object",
+      "description": "Merged into every child HelmRelease spec (Flux HelmRelease spec fields, e.g. interval/timeout/install/upgrade/rollback). Per-package `flux` overrides."
+    },
+    "packageValues": {
+      "type": "object",
+      "description": "Merged into every package HelmRelease's Helm values; per-package `values` override these."
+    },
+    "packages": {
+      "type": "object",
+      "description": "One Flux HelmRelease per entry, keyed by package name.",
+      "additionalProperties": { "$ref": "#/definitions/package" }
+    }
+  },
+  "definitions": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "namespace", "chart"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render this package's HelmRelease and namespace."
+        },
+        "releaseName": {
+          "type": "string",
+          "description": "Helm release name (defaults to the package key)."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Target namespace for the HelmRelease."
+        },
+        "chart": {
+          "type": "string",
+          "description": "Chart path within the repo (the Flux source)."
+        },
+        "wave": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Ordering wave; a package dependsOn every enabled package in a lower wave."
+        },
+        "requiresAmbient": {
+          "type": "boolean",
+          "description": "Only deploy when istio.ambient.enabled is true (e.g. istio-cni, ztunnel)."
+        },
+        "meshInjection": {
+          "type": "boolean",
+          "description": "Label this package's namespace for mesh enrollment: istio-injection=enabled in sidecar mode, istio.io/dataplane-mode=ambient in ambient mode."
+        },
+        "namespaceLabels": {
+          "type": "object",
+          "description": "Literal labels applied to the package's namespace (mode-independent).",
+          "additionalProperties": { "type": "string" }
+        },
+        "values": {
+          "type": "object",
+          "description": "Helm values passed to this package's chart (overrides packageValues)."
+        },
+        "flux": {
+          "type": "object",
+          "description": "Per-package Flux HelmRelease spec overrides (merged over the top-level flux)."
+        }
+      }
+    }
+  }
+}
