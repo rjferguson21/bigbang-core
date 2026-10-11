@@ -6,6 +6,14 @@
   "additionalProperties": false,
   "required": ["domain", "packages"],
   "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Named profile overlay from core/profiles/<name>.yaml (e.g. minimal, ambient); merged over these values (profile wins)."
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Escape hatch applied after the profile (wins over it). Same shape as the top-level values, e.g. overrides.packages.<name>.enabled."
+    },
     "domain": {
       "type": "string",
       "description": "Base domain for exposed services; merged into every package's values."
