@@ -14,26 +14,25 @@ deploy the core stack. Needs docker, [k3d](https://k3d.io),
 [Task](https://taskfile.dev), helm, kubectl, [yq](https://github.com/mikefarah/yq) (v4),
 envsubst and rsync (see [Prerequisites](#prerequisites)).
 
+One task creates the cluster and deploys the core stack (no app packages):
+
 ```bash
-# Just the cluster (no core) — MetalLB + Flux, nothing else.
-# Add UPSTREAM_IMAGES=true if you don't have Iron Bank (registry1) creds.
-task cluster:recreate UPSTREAM_IMAGES=true
+# With Iron Bank creds (REGISTRY1_USERNAME / REGISTRY1_PASSWORD set):
+task core:up
 
-# Cluster + core stack. Two common recipes:
-
-# a) With Iron Bank creds (REGISTRY1_USERNAME / REGISTRY1_PASSWORD set) — full core:
-task cluster:recreate
-task core:deploy
-
-# b) No creds — minimal core (operator, CRDs, Istio) on public images, fast:
-task cluster:recreate UPSTREAM_IMAGES=true
-task core:deploy CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
+# No creds — minimal core (operator, CRDs, Istio) on public images, fast:
+task core:up UPSTREAM_IMAGES=true CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
 
 task status      # operator pods + Package CRs
 task down        # delete the cluster
 ```
 
-`task` on its own does the whole thing (recreate → core → all packages).
+Other entry points:
+
+```bash
+task cluster:recreate      # just the k3d cluster (MetalLB + Flux, no core); add UPSTREAM_IMAGES=true without creds
+task                       # the whole thing: cluster → core → all app packages
+```
 
 ## Repo layout
 

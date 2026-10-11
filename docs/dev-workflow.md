@@ -2,6 +2,7 @@
 
 ```bash
 task                       # full stack: recreate the cluster, deploy core via Flux, then all packages
+task core:up               # cluster + core only (no app packages); UPSTREAM_IMAGES/CORE_VALUES pass through
 task cluster:recreate      # just the k3d cluster (MetalLB + Flux bootstrapped by the bb-k3d chart)
 task core:deploy           # core via Flux, sourced from a local gitea seeded with the working tree
 task packages:deploy       # app packages via helm (core must be up)
