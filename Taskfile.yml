@@ -384,14 +384,14 @@ tasks:
 
   playwright:install:
     desc: "Install the playwright suite's dependencies and chromium (WITH_DEPS=true also installs the OS packages, for CI runners)"
-    dir: playwright-tests
+    dir: tests
     cmds:
       - npm ci
       - npx playwright install {{if eq .WITH_DEPS "true"}}--with-deps {{end}}chromium
 
   playwright:test:
     desc: "Run the playwright suite against the current kubectl context: task playwright:test [SPEC=tests/kiali.spec.ts]"
-    dir: playwright-tests
+    dir: tests
     cmds:
       - npx playwright test {{.SPEC}}
 

@@ -11,7 +11,7 @@ packages are deployed with Helm on top of it.
 core/              # Flux parent chart + the core packages (operator, Istio, Kyverno, observability)
 packages/          # app packages (keycloak, gitlab, kiali, logging, security tools, …)
 dev/values/        # overlays for the dev/CI clusters (core-minimal, upstream-images, per-package tweaks)
-playwright-tests/  # shared end-to-end suite, run against a deployed cluster
+tests/  # shared end-to-end suite, run against a deployed cluster
 Taskfile.yml       # dev harness: k3d cluster, core via Flux, packages via helm
 .github/workflows/ # CI: k3d cluster + core-minimal on upstream images
 deps.md            # the umbrella's HelmRelease dependency graph, for reference
@@ -100,13 +100,13 @@ pod descriptions, logs, warning events and Flux controller logs on failure.
 
 ## End-to-end tests
 
-[`playwright-tests/`](playwright-tests/README.md) is a shared Playwright
+[`tests/`](tests/README.md) is a shared Playwright
 suite that replaces the per-package cypress tests. It runs against an
 already-deployed cluster and discovers the gateway IPs and passwords from
 the current kubectl context:
 
 ```bash
-cd playwright-tests && npm ci && npx playwright install chromium
+cd tests && npm ci && npx playwright install chromium
 npx playwright test                       # everything, against dev.bigbang.mil
 npx playwright test tests/keycloak.spec.ts
 ```
