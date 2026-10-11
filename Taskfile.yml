@@ -406,3 +406,33 @@ tasks:
         vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
       - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
       - task: status
+
+  ci:ambient:
+    desc: "CI ambient profile: recreate the cluster (bb-k3d public images), deploy core-minimal with ambient mode enabled, assert istio-cni/ztunnel + ambient enrollment, then deploy kiali as the smoke-test workload. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
+    cmds:
+      - task: cluster:recreate
+        vars: { UPSTREAM_IMAGES: "true" }
+      - task: core:deploy
+        vars: { CORE_VALUES: "dev/values/core-minimal.yaml,dev/values/upstream-images.yaml,dev/values/ambient.yaml" }
+      # The ambient data plane must be running on every node.
+      - kubectl --context {{.CTX}} -n istio-system rollout status ds/istio-cni-node --timeout=180s
+      - kubectl --context {{.CTX}} -n istio-system rollout status ds/ztunnel --timeout=180s
+      # Sanity-check ambient capture: a pod in an ambient-labeled namespace must
+      # get the ambient.istio.io/redirection annotation from istio-cni (kyverno
+      # is off in core-minimal, so no PolicyException is needed).
+      - |
+        set -eo pipefail
+        kubectl --context {{.CTX}} create namespace ambient-test --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+        kubectl --context {{.CTX}} label namespace ambient-test istio.io/dataplane-mode=ambient --overwrite
+        kubectl --context {{.CTX}} -n ambient-test run ambient-probe --image=registry.k8s.io/pause:3.9 --restart=Never --overwrite
+        kubectl --context {{.CTX}} -n ambient-test wait --for=condition=Ready pod/ambient-probe --timeout=120s
+        redir=$(kubectl --context {{.CTX}} -n ambient-test get pod ambient-probe -o jsonpath='{.metadata.annotations.ambient\.istio\.io/redirection}')
+        echo "ambient-probe redirection annotation: '${redir}'"
+        [ "$redir" = "enabled" ] || { echo "FAIL: ambient-probe was not ambient-enrolled"; exit 1; }
+        echo "PASS: workload is ambient-enrolled"
+      # Deploy kiali as the smoke-test app; the kiali playwright spec then
+      # exercises it through the gateway (run from the workflow after this task).
+      - task: package:deploy
+        vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
+      - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
+      - task: status
