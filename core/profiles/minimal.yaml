@@ -1,0 +1,18 @@
+# minimal profile — just the operator, CRDs and Istio, for testing one package
+# at a time. Layered between the chart defaults and your values, so you can
+# still re-enable a package on top (e.g. --set packages.loki.enabled=true).
+packages:
+  kyverno:
+    enabled: false
+  kyverno-policies:
+    enabled: false
+  kyverno-reporter:
+    enabled: false
+  monitoring:
+    enabled: false
+  grafana:
+    enabled: false
+  loki:
+    enabled: false
+  alloy:
+    enabled: false

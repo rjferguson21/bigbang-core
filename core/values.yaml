@@ -1,308 +1,310 @@
-domain: dev.bigbang.mil
-
-# Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
-# packages deploy (they're gated with requiresAmbient), istiod runs with
-# ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so
-# the operator generates HBONE-aware policies and drops sidecar resources), and
-# mesh namespaces use istio.io/dataplane-mode=ambient instead of
-# istio-injection=enabled.
-istio:
-  ambient:
-    enabled: false
-
-# Flux source the child HelmReleases pull their charts from (by path within
-# the repo). Created alongside the parent HelmRelease (core/bigbang-core.yaml);
-# namespace defaults to the parent release namespace.
-source:
-  kind: GitRepository
-  name: bigbang-core
-  namespace: ""
-
-# Merged into every child HelmRelease spec; per-package `flux:` overrides.
-flux:
-  interval: 1m
-  timeout: 10m
-  install:
-    # the parent release creates every package namespace (core/templates/
-    # namespaces.yaml) so it can set istio-injection labels; a racing
-    # helm-controller createNamespace would create them unlabeled first
-    createNamespace: false
-    remediation:
-      retries: -1
-  upgrade:
-    remediation:
-      retries: 3
-      remediateLastFailure: true
-    cleanupOnFail: true
-  rollback:
+# Chart defaults live under _internal_defaults_do_not_set so the profile
+# machinery (core/templates/_profile.tpl + core/profiles/<name>.yaml) can layer
+# a named profile between the defaults and the user's own values. Do NOT set
+# this key directly; set fields at the TOP level instead (e.g. `--set
+# packages.loki.enabled=false`, or a `-f` overlay), which always wins.
+# Precedence: these defaults < profile (PROFILE=/--set profile=) < your values.
+_internal_defaults_do_not_set:
+  domain: dev.bigbang.mil
+  # Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
+  # packages deploy (they're gated with requiresAmbient), istiod runs with
+  # ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so
+  # the operator generates HBONE-aware policies and drops sidecar resources), and
+  # mesh namespaces use istio.io/dataplane-mode=ambient instead of
+  # istio-injection=enabled.
+  istio:
+    ambient:
+      enabled: false
+  # Flux source the child HelmReleases pull their charts from (by path within
+  # the repo). Created alongside the parent HelmRelease (core/bigbang-core.yaml);
+  # namespace defaults to the parent release namespace.
+  source:
+    kind: GitRepository
+    name: bigbang-core
+    namespace: ""
+  # Merged into every child HelmRelease spec; per-package `flux:` overrides.
+  flux:
+    interval: 1m
     timeout: 10m
-    cleanupOnFail: true
-
-# Merged into every package HelmRelease's Helm values (domain is added
-# automatically). Per-package `values:` below override these.
-packageValues:
-  bigbangPackage:
-    istio:
+    install:
+      # the parent release creates every package namespace (core/templates/
+      # namespaces.yaml) so it can set istio-injection labels; a racing
+      # helm-controller createNamespace would create them unlabeled first
+      createNamespace: false
+      remediation:
+        retries: -1
+    upgrade:
+      remediation:
+        retries: 3
+        remediateLastFailure: true
+      cleanupOnFail: true
+    rollback:
+      timeout: 10m
+      cleanupOnFail: true
+  # Merged into every package HelmRelease's Helm values (domain is added
+  # automatically). Per-package `values:` below override these.
+  packageValues:
+    bigbangPackage:
+      istio:
+        enabled: true
+      networkPolicies:
+        enabled: true
+  # One Flux HelmRelease per entry. `chart` is the path within the repo; `wave`
+  # sequences them — each package dependsOn every enabled package in a lower
+  # wave, so a wave starts only once the previous waves are Ready. Set
+  # enabled=false to skip one.
+  packages:
+    # --- wave 0: foundation (operator + CRDs), before anything that uses them ---
+    # The operator reconciles the Package CRs every core chart emits, so it must
+    # be running before wave 1. Its chart ships the packages.bigbang.dev CRD and
+    # defaults to the published GHCR image.
+    bigbang-operator:
       enabled: true
-    networkPolicies:
+      releaseName: bigbang-operator
+      namespace: bigbang-operator
+      chart: core/bigbang-operator/chart
+      wave: 0
+      values:
+        # Shared egress/ingress definitions every Package can reference via
+        # networkPolicies.*.definition.<name> (defined once here instead of
+        # per-package; package-local definitions still override).
+        globalConfig:
+          create: true
+          # Shapes match the umbrella's global networkPolicies.*.definitions
+          # defaults; narrow the CIDRs per environment as needed.
+          egressDefinitions:
+            # CIDRs the SSO provider is served on
+            sso:
+              to:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+            # Object storage endpoints (S3 etc.)
+            storage-subnets:
+              to:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+              ports:
+                - port: 443
+                  protocol: TCP
+            # Externally managed Redis/Valkey/Sentinel endpoints
+            redis-subnets:
+              to:
+                - ipBlock:
+                    cidr: 192.168.0.0/16
+                - ipBlock:
+                    cidr: 172.16.0.0/12
+                - ipBlock:
+                    cidr: 10.0.0.0/8
+              ports:
+                - port: 6379
+                  protocol: TCP
+            # Externally managed PostgreSQL endpoints
+            database-subnets:
+              to:
+                - ipBlock:
+                    cidr: 192.168.0.0/16
+                - ipBlock:
+                    cidr: 172.16.0.0/12
+                - ipBlock:
+                    cidr: 10.0.0.0/8
+              ports:
+                - port: 5432
+                  protocol: TCP
+          ingressDefinitions:
+            # Subnets where load balancer traffic originates; referenced by the
+            # istio-gateway package for its web-port ingress
+            load-balancer-subnets:
+              from:
+                - ipBlock:
+                    cidr: 192.168.0.0/16
+                - ipBlock:
+                    cidr: 172.16.0.0/12
+                - ipBlock:
+                    cidr: 10.0.0.0/8
+    # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring,
+    # kyverno-reporter, alloy.
+    prometheus-operator-crds:
       enabled: true
-
-# One Flux HelmRelease per entry. `chart` is the path within the repo; `wave`
-# sequences them — each package dependsOn every enabled package in a lower
-# wave, so a wave starts only once the previous waves are Ready. Set
-# enabled=false to skip one.
-packages:
-  # --- wave 0: foundation (operator + CRDs), before anything that uses them ---
-  # The operator reconciles the Package CRs every core chart emits, so it must
-  # be running before wave 1. Its chart ships the packages.bigbang.dev CRD and
-  # defaults to the published GHCR image.
-  bigbang-operator:
-    enabled: true
-    releaseName: bigbang-operator
-    namespace: bigbang-operator
-    chart: core/bigbang-operator/chart
-    wave: 0
-    values:
-      # Shared egress/ingress definitions every Package can reference via
-      # networkPolicies.*.definition.<name> (defined once here instead of
-      # per-package; package-local definitions still override).
-      globalConfig:
-        create: true
-        # Shapes match the umbrella's global networkPolicies.*.definitions
-        # defaults; narrow the CIDRs per environment as needed.
-        egressDefinitions:
-          # CIDRs the SSO provider is served on
-          sso:
-            to:
-            - ipBlock:
-                cidr: 0.0.0.0/0
-          # Object storage endpoints (S3 etc.)
-          storage-subnets:
-            to:
-            - ipBlock:
-                cidr: 0.0.0.0/0
-            ports:
-            - port: 443
-              protocol: TCP
-          # Externally managed Redis/Valkey/Sentinel endpoints
-          redis-subnets:
-            to:
-            - ipBlock:
-                cidr: 192.168.0.0/16
-            - ipBlock:
-                cidr: 172.16.0.0/12
-            - ipBlock:
-                cidr: 10.0.0.0/8
-            ports:
-            - port: 6379
-              protocol: TCP
-          # Externally managed PostgreSQL endpoints
-          database-subnets:
-            to:
-            - ipBlock:
-                cidr: 192.168.0.0/16
-            - ipBlock:
-                cidr: 172.16.0.0/12
-            - ipBlock:
-                cidr: 10.0.0.0/8
-            ports:
-            - port: 5432
-              protocol: TCP
-        ingressDefinitions:
-          # Subnets where load balancer traffic originates; referenced by the
-          # istio-gateway package for its web-port ingress
-          load-balancer-subnets:
-            from:
-            - ipBlock:
-                cidr: 192.168.0.0/16
-            - ipBlock:
-                cidr: 172.16.0.0/12
-            - ipBlock:
-                cidr: 10.0.0.0/8
-  # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring,
-  # kyverno-reporter, alloy.
-  prometheus-operator-crds:
-    enabled: true
-    releaseName: prometheus-operator-crds
-    namespace: monitoring
-    chart: core/prometheus-operator-crds/chart
-    wave: 0
-  # Istio CRDs must exist before istiod (and before the operator reconciles
-  # istio-enabled Package CRs) — wave 0 so it lands first.
-  istio-crds:
-    enabled: true
-    releaseName: istio-crds
-    namespace: istio-system
-    chart: core/istio-crds/chart
-    wave: 0
-  istiod:
-    enabled: true
-    releaseName: istiod
-    namespace: istio-system
-    chart: core/istiod/chart
-    wave: 1
-  istio-gateway:
-    enabled: true
-    releaseName: public-ingressgateway
-    namespace: istio-gateway
-    chart: core/istio-gateway/chart
-    wave: 2
-    # the gateway pod ships image "auto" — istiod's injector only rewrites it
-    # when the namespace is injection-enabled
-    namespaceLabels:
-      istio-injection: enabled
-    values:
-      # Pin to the IP the bb-k3d hostAliases and dev /etc/hosts entries expect
-      # (same pattern as the packages' dev-values). It is agent-0's docker IP:
-      # traffic from the host reaches the node directly and kube-proxy DNATs
-      # the LB ingress IP to the gateway pod — no MetalLB announcement needed.
-      # 172.28.0.4 is reserved for the passthrough gateway.
-      upstream:
-        service:
-          annotations:
-            metallb.io/loadBalancerIPs: 172.28.0.3
-  # Ambient data plane (only deployed when istio.ambient.enabled; requiresAmbient
-  # gates them out of the package set otherwise). istio-cni installs the node CNI
-  # plugin that redirects ambient-labeled pods to ztunnel, the per-node L4 mTLS proxy.
-  istio-cni:
-    enabled: true
-    requiresAmbient: true
-    releaseName: istio-cni
-    namespace: istio-system
-    chart: core/istio-cni/chart
-    wave: 1
-    values:
-      upstream:
-        # k3s keeps CNI config/binaries under /var/lib/rancher/k3s, not the
-        # istio defaults (/etc/cni/net.d, /opt/cni/bin); without these the
-        # chained istio-cni agent never finds flannel and stays not-ready
-        cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
-        cniBinDir: /var/lib/rancher/k3s/data/cni
-  ztunnel:
-    enabled: true
-    requiresAmbient: true
-    releaseName: ztunnel
-    namespace: istio-system
-    chart: core/ztunnel/chart
-    # wave 1 (with istiod/istio-cni, before kyverno-policies at wave 2): the node
-    # agents are admitted while no ClusterPolicy exists yet, so bring-up never
-    # depends on the kyverno exclude landing first. ztunnel tolerates istiod
-    # still coming up. Must precede every ambient workload (wave 3).
-    wave: 1
-  kyverno:
-    enabled: true
-    releaseName: kyverno-kyverno
-    namespace: kyverno
-    chart: core/kyverno/chart
-    wave: 1
-  kyverno-policies:
-    enabled: true
-    releaseName: kyverno-kyverno-policies
-    namespace: kyverno
-    chart: core/kyverno-policies/chart
-    wave: 2
-    values:
-      policies:
-        # k3d's local-path provisioner creates hostPath PVs under this path
-        restrict-host-path-mount-pv:
-          parameters:
-            allow:
-            - /var/lib/rancher/k3s/storage/pvc-*
-      # Carve-outs for the ambient data plane (istio-cni/ztunnel): privileged,
-      # host-path node agents that can't satisfy the pod-security policies.
-      # Uses the native per-policy exclude (merged into every policy) rather than
-      # a PolicyException — this kyverno honors excludes, but ignores the
-      # deprecated kyverno.io/v2 PolicyException for these ClusterPolicies.
-      # Matched by label, not name: DaemonSet pods are admitted with an empty
-      # name (generateName), so a name glob never matches at admission. Harmless
-      # when ambient is off (nothing carries these labels).
-      exclude:
-        any:
-        - resources:
-            namespaces:
-            - kube-system
-        - resources:
-            namespaces:
-            - istio-system
-            selector:
-              matchLabels:
-                app.kubernetes.io/name: istio-cni
-        - resources:
-            namespaces:
-            - istio-system
-            selector:
-              matchLabels:
-                app.kubernetes.io/name: ztunnel
-  kyverno-reporter:
-    enabled: true
-    releaseName: kyverno-reporter-kyverno-reporter
-    namespace: kyverno-reporter
-    chart: core/kyverno-reporter/chart
-    # wave 3 (not 2) so ztunnel (wave 2) is up before this ambient workload
-    wave: 3
-    meshInjection: true
-  # --- observability stack ---
-  monitoring:
-    enabled: true
-    releaseName: monitoring-monitoring
-    namespace: monitoring
-    chart: core/monitoring/chart
-    wave: 3
-    # mesh-enrolls the shared monitoring namespace (monitoring, grafana, prom CRDs)
-    meshInjection: true
-  loki:
-    enabled: true
-    releaseName: logging
-    namespace: logging
-    chart: core/loki/chart
-    wave: 3
-    meshInjection: true
-  grafana:
-    enabled: true
-    releaseName: monitoring-grafana
-    namespace: monitoring
-    chart: core/grafana/chart
-    wave: 3  # alongside monitoring (Prometheus datasource resolves by DNS)
-    values:
-      # dev datasource wiring (the umbrella normally provisions this)
-      upstream:
-        datasources:
-          datasources.yaml:
-            apiVersion: 1
-            datasources:
-              - name: Prometheus
-                type: prometheus
-                url: http://monitoring-monitoring-kube-prometheus.monitoring.svc.cluster.local:9090
-                access: proxy
-                isDefault: true
-  alloy:
-    enabled: true
-    releaseName: alloy
-    namespace: alloy
-    chart: core/alloy/chart
-    wave: 3  # alongside loki (log shipping) and monitoring (scraping)
-    meshInjection: true
-    values:
-      # dev collector wiring: ship pod logs to loki, expose logs collector to prometheus
-      upstream:
-        destinations:
-          loki:
-            type: loki
-            url: http://logging-loki.logging.svc.cluster.local:3100/loki/api/v1/push
-        collectors:
-          alloy-logs:
-            enabled: true
-            presets:
-              - daemonset
-              - filesystem-log-reader
-            global:
-              podSecurityContext:
-                fsGroup: 0
-        podLogsViaLoki:
-          enabled: true
+      releaseName: prometheus-operator-crds
+      namespace: monitoring
+      chart: core/prometheus-operator-crds/chart
+      wave: 0
+    # Istio CRDs must exist before istiod (and before the operator reconciles
+    # istio-enabled Package CRs) — wave 0 so it lands first.
+    istio-crds:
+      enabled: true
+      releaseName: istio-crds
+      namespace: istio-system
+      chart: core/istio-crds/chart
+      wave: 0
+    istiod:
+      enabled: true
+      releaseName: istiod
+      namespace: istio-system
+      chart: core/istiod/chart
+      wave: 1
+    istio-gateway:
+      enabled: true
+      releaseName: public-ingressgateway
+      namespace: istio-gateway
+      chart: core/istio-gateway/chart
+      wave: 2
+      # the gateway pod ships image "auto" — istiod's injector only rewrites it
+      # when the namespace is injection-enabled
+      namespaceLabels:
+        istio-injection: enabled
+      values:
+        # Pin to the IP the bb-k3d hostAliases and dev /etc/hosts entries expect
+        # (same pattern as the packages' dev-values). It is agent-0's docker IP:
+        # traffic from the host reaches the node directly and kube-proxy DNATs
+        # the LB ingress IP to the gateway pod — no MetalLB announcement needed.
+        # 172.28.0.4 is reserved for the passthrough gateway.
+        upstream:
+          service:
+            annotations:
+              metallb.io/loadBalancerIPs: 172.28.0.3
+    # Ambient data plane (only deployed when istio.ambient.enabled; requiresAmbient
+    # gates them out of the package set otherwise). istio-cni installs the node CNI
+    # plugin that redirects ambient-labeled pods to ztunnel, the per-node L4 mTLS proxy.
+    istio-cni:
+      enabled: true
+      requiresAmbient: true
+      releaseName: istio-cni
+      namespace: istio-system
+      chart: core/istio-cni/chart
+      wave: 1
+      values:
+        upstream:
+          # k3s keeps CNI config/binaries under /var/lib/rancher/k3s, not the
+          # istio defaults (/etc/cni/net.d, /opt/cni/bin); without these the
+          # chained istio-cni agent never finds flannel and stays not-ready
+          cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
+          cniBinDir: /var/lib/rancher/k3s/data/cni
+    ztunnel:
+      enabled: true
+      requiresAmbient: true
+      releaseName: ztunnel
+      namespace: istio-system
+      chart: core/ztunnel/chart
+      # wave 1 (with istiod/istio-cni, before kyverno-policies at wave 2): the node
+      # agents are admitted while no ClusterPolicy exists yet, so bring-up never
+      # depends on the kyverno exclude landing first. ztunnel tolerates istiod
+      # still coming up. Must precede every ambient workload (wave 3).
+      wave: 1
+    kyverno:
+      enabled: true
+      releaseName: kyverno-kyverno
+      namespace: kyverno
+      chart: core/kyverno/chart
+      wave: 1
+    kyverno-policies:
+      enabled: true
+      releaseName: kyverno-kyverno-policies
+      namespace: kyverno
+      chart: core/kyverno-policies/chart
+      wave: 2
+      values:
+        policies:
+          # k3d's local-path provisioner creates hostPath PVs under this path
+          restrict-host-path-mount-pv:
+            parameters:
+              allow:
+                - /var/lib/rancher/k3s/storage/pvc-*
+        # Carve-outs for the ambient data plane (istio-cni/ztunnel): privileged,
+        # host-path node agents that can't satisfy the pod-security policies.
+        # Uses the native per-policy exclude (merged into every policy) rather than
+        # a PolicyException — this kyverno honors excludes, but ignores the
+        # deprecated kyverno.io/v2 PolicyException for these ClusterPolicies.
+        # Matched by label, not name: DaemonSet pods are admitted with an empty
+        # name (generateName), so a name glob never matches at admission. Harmless
+        # when ambient is off (nothing carries these labels).
+        exclude:
+          any:
+            - resources:
+                namespaces:
+                  - kube-system
+            - resources:
+                namespaces:
+                  - istio-system
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: istio-cni
+            - resources:
+                namespaces:
+                  - istio-system
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: ztunnel
+    kyverno-reporter:
+      enabled: true
+      releaseName: kyverno-reporter-kyverno-reporter
+      namespace: kyverno-reporter
+      chart: core/kyverno-reporter/chart
+      # wave 3 (not 2) so ztunnel (wave 2) is up before this ambient workload
+      wave: 3
+      meshInjection: true
+    # --- observability stack ---
+    monitoring:
+      enabled: true
+      releaseName: monitoring-monitoring
+      namespace: monitoring
+      chart: core/monitoring/chart
+      wave: 3
+      # mesh-enrolls the shared monitoring namespace (monitoring, grafana, prom CRDs)
+      meshInjection: true
+    loki:
+      enabled: true
+      releaseName: logging
+      namespace: logging
+      chart: core/loki/chart
+      wave: 3
+      meshInjection: true
+    grafana:
+      enabled: true
+      releaseName: monitoring-grafana
+      namespace: monitoring
+      chart: core/grafana/chart
+      wave: 3 # alongside monitoring (Prometheus datasource resolves by DNS)
+      values:
+        # dev datasource wiring (the umbrella normally provisions this)
+        upstream:
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+                - name: Prometheus
+                  type: prometheus
+                  url: http://monitoring-monitoring-kube-prometheus.monitoring.svc.cluster.local:9090
+                  access: proxy
+                  isDefault: true
+    alloy:
+      enabled: true
+      releaseName: alloy
+      namespace: alloy
+      chart: core/alloy/chart
+      wave: 3 # alongside loki (log shipping) and monitoring (scraping)
+      meshInjection: true
+      values:
+        # dev collector wiring: ship pod logs to loki, expose logs collector to prometheus
+        upstream:
           destinations:
-            - loki
-      serviceMonitors:
-        - name: alloy-logs
-          selectorLabels:
-            app.kubernetes.io/name: alloy-logs
+            loki:
+              type: loki
+              url: http://logging-loki.logging.svc.cluster.local:3100/loki/api/v1/push
+          collectors:
+            alloy-logs:
+              enabled: true
+              presets:
+                - daemonset
+                - filesystem-log-reader
+              global:
+                podSecurityContext:
+                  fsGroup: 0
+          podLogsViaLoki:
+            enabled: true
+            destinations:
+              - loki
+        serviceMonitors:
+          - name: alloy-logs
+            selectorLabels:
+              app.kubernetes.io/name: alloy-logs

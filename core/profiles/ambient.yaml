@@ -1,0 +1,6 @@
+# ambient profile — enable Istio ambient mesh mode (deploys istio-cni + ztunnel,
+# istiod ambient/HBONE, dataplane-mode=ambient namespaces). Equivalent to
+# setting istio.ambient.enabled=true.
+istio:
+  ambient:
+    enabled: true

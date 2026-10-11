@@ -257,6 +257,8 @@ tasks:
       # optional overrides for the core chart: one file or a comma-separated
       # list merged in order (e.g. dev/values/core-minimal.yaml,dev/values/upstream-images.yaml)
       CORE_VALUES: '{{.CORE_VALUES | default ""}}'
+      # optional named profile baked into the chart (core/profiles/<name>.yaml), e.g. minimal, ambient
+      PROFILE: '{{.PROFILE | default ""}}'
       # the merged overlay the ConfigMap and the readiness count are built from
       CORE_VALUES_FILE: k3d/.rendered/core-values.yaml
     cmds:
@@ -269,9 +271,15 @@ tasks:
       # with yq when several files are given) or remove it so a previous
       # profile doesn't linger
       - |
-        if [ -n "{{.CORE_VALUES}}" ]; then
+        if [ -n "{{.CORE_VALUES}}" ] || [ -n "{{.PROFILE}}" ]; then
           mkdir -p k3d/.rendered && echo "*" > k3d/.rendered/.gitignore
-          yq eval-all '. as $item ireduce ({}; . * $item)' $(echo "{{.CORE_VALUES}}" | tr ',' ' ') > {{.CORE_VALUES_FILE}}
+          if [ -n "{{.CORE_VALUES}}" ]; then
+            yq eval-all '. as $item ireduce ({}; . * $item)' $(echo "{{.CORE_VALUES}}" | tr ',' ' ') > {{.CORE_VALUES_FILE}}
+          else
+            echo '{}' > {{.CORE_VALUES_FILE}}
+          fi
+          # profile is a top-level user value the core chart reads (core.merged)
+          if [ -n "{{.PROFILE}}" ]; then yq -i '.profile = "{{.PROFILE}}"' {{.CORE_VALUES_FILE}}; fi
           kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} create configmap bigbang-core-values \
             --from-file=values.yaml={{.CORE_VALUES_FILE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
         else
@@ -309,15 +317,12 @@ tasks:
       # at t=0). Poll until every enabled package's HelmRelease reports Ready.
       - |
         ns={{.FLUX_NAMESPACE}}
-        # count the child releases the chart renders (exclude the parent),
-        # honoring the CORE_VALUES overlay when one is in play
-        # ambient-only packages (requiresAmbient) count only when istio.ambient.enabled
-        count='(.istio.ambient.enabled // false) as $amb | [.packages[] | select(.enabled != false) | select(.requiresAmbient != true or $amb)] | length'
-        if [ -n "{{.CORE_VALUES}}" ]; then
-          expected=$(yq eval-all "select(fileIndex==0) * select(fileIndex==1) | $count" core/values.yaml {{.CORE_VALUES_FILE}})
-        else
-          expected=$(yq "$count" core/values.yaml)
-        fi
+        # count the child HelmReleases the chart actually renders — the source of
+        # truth that honors the profile, CORE_VALUES overlays and ambient gating.
+        vals=""
+        for f in $(echo "{{.CORE_VALUES}}" | tr ',' ' '); do vals="$vals -f $f"; done
+        [ -n "{{.PROFILE}}" ] && vals="$vals --set profile={{.PROFILE}}"
+        expected=$(helm template core ./core $vals 2>/dev/null | grep -c '^kind: HelmRelease$')
         echo "waiting for $expected core HelmReleases to be Ready..."
         deadline=$(( $(date +%s) + 900 ))
         while :; do
@@ -383,7 +388,7 @@ tasks:
       - task: packages:deploy
 
   core:up:
-    desc: "Create the cluster and deploy just the core stack (no app packages). UPSTREAM_IMAGES=true and CORE_VALUES=... pass through (e.g. core-minimal + upstream-images for a no-creds cluster)."
+    desc: "Create the cluster and deploy just the core stack (no app packages). UPSTREAM_IMAGES=true, PROFILE=minimal|ambient, and CORE_VALUES=... pass through."
     cmds:
       - task: cluster:recreate
       - task: core:deploy
