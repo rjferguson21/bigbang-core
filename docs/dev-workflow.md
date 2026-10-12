@@ -35,6 +35,25 @@ task core:up PROFILE=minimal
 task core:up PROFILE=ambient
 ```
 
+## Package groups
+
+Packages are tagged into groups you can toggle together; a package renders only
+when its own `enabled` is true **and** its group isn't disabled. Groups
+(default on):
+
+- `policy` — kyverno, kyverno-policies, kyverno-reporter
+- `observability` — monitoring, grafana, loki, alloy
+
+(The operator, CRDs and Istio are ungrouped/foundational.) Toggle a group via a
+`CORE_VALUES` overlay or `--set`, e.g. drop the observability stack:
+
+```bash
+helm template core ./core --set groups.observability.enabled=false
+```
+
+Groups are the primitive profiles build on: the `minimal` profile is just
+`groups.policy.enabled=false` + `groups.observability.enabled=false`.
+
 ## Value overlays
 
 Ad-hoc overlays for the core chart go in `CORE_VALUES`, one file or a
