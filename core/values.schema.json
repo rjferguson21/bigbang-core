@@ -10,6 +10,17 @@
       "type": "string",
       "description": "Named profile overlay from core/profiles/<name>.yaml (e.g. minimal, ambient); merged over these values (profile wins on the keys it sets)."
     },
+    "groups": {
+      "type": "object",
+      "description": "Package groups; disabling a group gates out every package tagged with it.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" }
+        }
+      }
+    },
     "domain": {
       "type": "string",
       "description": "Base domain for exposed services; merged into every package's values."
@@ -84,6 +95,10 @@
         "requiresAmbient": {
           "type": "boolean",
           "description": "Only deploy when istio.ambient.enabled is true (e.g. istio-cni, ztunnel)."
+        },
+        "group": {
+          "type": "string",
+          "description": "Group name; the package is gated out when groups.<name>.enabled is false."
         },
         "meshInjection": {
           "type": "boolean",

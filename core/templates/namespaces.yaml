@@ -10,7 +10,7 @@
 {{- $meshLabel := ternary (dict "istio.io/dataplane-mode" "ambient") (dict "istio-injection" "enabled") $ambient }}
 {{- $byNamespace := dict }}
 {{- range $name, $pkg := $v.packages }}
-{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient)) "true" }}
+{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient "groups" $v.groups)) "true" }}
 {{- $labels := merge (index $byNamespace $pkg.namespace | default dict) ($pkg.namespaceLabels | default dict) }}
 {{- if $pkg.meshInjection }}
 {{- $labels = merge $labels (deepCopy $meshLabel) }}

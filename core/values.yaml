@@ -6,6 +6,16 @@ domain: dev.bigbang.mil
 # stay customizable. Empty = no profile.
 profile: ""
 
+# Package groups — toggle a chunk of packages together. A package tagged with
+# `group: <name>` is rendered only when its group is enabled here (in addition
+# to its own `enabled`). Ungrouped packages (operator, Istio, CRDs) are always
+# subject only to their own `enabled`. Profiles/overlays can flip these too.
+groups:
+  policy:
+    enabled: true
+  observability:
+    enabled: true
+
 # Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
 # packages deploy (they're gated with requiresAmbient), istiod runs with
 # ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so
@@ -199,12 +209,14 @@ packages:
     enabled: true
     releaseName: kyverno-kyverno
     namespace: kyverno
+    group: policy
     chart: core/kyverno/chart
     wave: 1
   kyverno-policies:
     enabled: true
     releaseName: kyverno-kyverno-policies
     namespace: kyverno
+    group: policy
     chart: core/kyverno-policies/chart
     wave: 2
     values:
@@ -243,6 +255,7 @@ packages:
     enabled: true
     releaseName: kyverno-reporter-kyverno-reporter
     namespace: kyverno-reporter
+    group: policy
     chart: core/kyverno-reporter/chart
     # wave 3 (not 2) so ztunnel (wave 2) is up before this ambient workload
     wave: 3
@@ -252,6 +265,7 @@ packages:
     enabled: true
     releaseName: monitoring-monitoring
     namespace: monitoring
+    group: observability
     chart: core/monitoring/chart
     wave: 3
     # mesh-enrolls the shared monitoring namespace (monitoring, grafana, prom CRDs)
@@ -260,6 +274,7 @@ packages:
     enabled: true
     releaseName: logging
     namespace: logging
+    group: observability
     chart: core/loki/chart
     wave: 3
     meshInjection: true
@@ -267,6 +282,7 @@ packages:
     enabled: true
     releaseName: monitoring-grafana
     namespace: monitoring
+    group: observability
     chart: core/grafana/chart
     wave: 3  # alongside monitoring (Prometheus datasource resolves by DNS)
     values:
@@ -285,6 +301,7 @@ packages:
     enabled: true
     releaseName: alloy
     namespace: alloy
+    group: observability
     chart: core/alloy/chart
     wave: 3  # alongside loki (log shipping) and monitoring (scraping)
     meshInjection: true
