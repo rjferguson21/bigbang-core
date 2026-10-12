@@ -1,12 +1,17 @@
 {{/*
-Effective enablement of a package: on when enabled, and — for ambient-only
-packages (requiresAmbient, e.g. istio-cni/ztunnel) — only when ambient mode is on.
-Args: dict "pkg" <package values> "ambient" <bool>
+Effective enablement of a package. On when ALL hold:
+  - the package's own `enabled` is true;
+  - it isn't gated out of a disabled `group` (group enabled defaults true);
+  - if ambient-only (`requiresAmbient`, e.g. istio-cni/ztunnel), ambient is on.
+Args: dict "pkg" <package values> "ambient" <bool> "groups" <groups map>
 Returns "true" when the package should be rendered, "" otherwise.
 */}}
 {{- define "core.pkgEnabled" -}}
 {{- $pkg := .pkg -}}
-{{- if $pkg.enabled -}}
+{{- $groups := .groups | default dict -}}
+{{- $groupOn := true -}}
+{{- with $pkg.group -}}{{- $groupOn = ne (dig . "enabled" true $groups) false -}}{{- end -}}
+{{- if and $pkg.enabled $groupOn -}}
 {{- if $pkg.requiresAmbient -}}{{ if .ambient }}true{{ end }}{{- else -}}true{{- end -}}
 {{- end -}}
 {{- end -}}

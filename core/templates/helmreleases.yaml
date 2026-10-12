@@ -1,7 +1,7 @@
 {{- $v := fromYaml (include "core.merged" .) }}
 {{- $ambient := dig "ambient" "enabled" false ($v.istio | default dict) }}
 {{- range $name, $pkg := $v.packages }}
-{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient)) "true" }}
+{{- if eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient "groups" $v.groups)) "true" }}
 {{- $flux := mergeOverwrite (deepCopy $v.flux) (deepCopy ($pkg.flux | default dict)) }}
 {{- $wave := int ($pkg.wave | default 0) }}
 ---
@@ -26,7 +26,7 @@ spec:
   {{- toYaml $flux | nindent 2 }}
   {{- $deps := list }}
   {{- range $depName, $dep := $v.packages }}
-  {{- if and (eq (include "core.pkgEnabled" (dict "pkg" $dep "ambient" $ambient)) "true") (lt (int ($dep.wave | default 0)) $wave) }}
+  {{- if and (eq (include "core.pkgEnabled" (dict "pkg" $dep "ambient" $ambient "groups" $v.groups)) "true") (lt (int ($dep.wave | default 0)) $wave) }}
   {{- $deps = append $deps $depName }}
   {{- end }}
   {{- end }}

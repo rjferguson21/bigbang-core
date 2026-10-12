@@ -1,17 +1,7 @@
 # minimal profile — just the operator, CRDs and Istio, for testing one package
-# at a time. Merged over the chart values (profile wins).
-packages:
-  kyverno:
+# at a time. Expressed as group toggles (merged over the chart values).
+groups:
+  policy:
     enabled: false
-  kyverno-policies:
-    enabled: false
-  kyverno-reporter:
-    enabled: false
-  monitoring:
-    enabled: false
-  grafana:
-    enabled: false
-  loki:
-    enabled: false
-  alloy:
+  observability:
     enabled: false
