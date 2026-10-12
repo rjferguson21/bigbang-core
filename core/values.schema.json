@@ -6,6 +6,10 @@
   "additionalProperties": false,
   "required": ["domain", "packages"],
   "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Named profile overlay from core/profiles/<name>.yaml (e.g. minimal, ambient); merged over these values (profile wins on the keys it sets)."
+    },
     "domain": {
       "type": "string",
       "description": "Base domain for exposed services; merged into every package's values."

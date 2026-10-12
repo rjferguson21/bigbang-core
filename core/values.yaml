@@ -1,5 +1,11 @@
 domain: dev.bigbang.mil
 
+# Named profile baked into the chart (core/profiles/<name>.yaml), e.g. minimal
+# or ambient. Applied via .Files.Get and merged OVER these values, so a profile
+# wins over the defaults/your values on the keys it sets; keys it doesn't touch
+# stay customizable. Empty = no profile.
+profile: ""
+
 # Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
 # packages deploy (they're gated with requiresAmbient), istiod runs with
 # ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so

@@ -22,8 +22,23 @@ storage and valkey from the pipeline-templates dependency stack.
 
 ## Profiles
 
-Overlays for the core chart go in `CORE_VALUES`, one file or a
-comma-separated list merged in order:
+The core chart ships named profiles in `core/profiles/<name>.yaml`, selected with
+`PROFILE=` (or `--set profile=<name>`); the chart reads them via `.Files.Get` and
+merges them over your values (the profile wins on the keys it sets; keys it
+doesn't touch stay customizable):
+
+- `minimal` — only the operator, the CRD charts and Istio, for testing one package at a time.
+- `ambient` — enable Istio ambient mesh mode.
+
+```bash
+task core:up PROFILE=minimal
+task core:up PROFILE=ambient
+```
+
+## Value overlays
+
+Ad-hoc overlays for the core chart go in `CORE_VALUES`, one file or a
+comma-separated list merged in order (composable with `PROFILE=`):
 
 - `dev/values/core-minimal.yaml`: only the operator, the CRD charts and
   Istio, for testing one package at a time.
