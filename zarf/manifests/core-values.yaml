@@ -1,5 +1,5 @@
 # Overrides read by the parent HelmRelease (valuesFrom this ConfigMap).
-# profile=minimal selects core/profiles/minimal.yaml (operator + CRDs + Istio).
+# No profile set, so the full default stack deploys (all groups enabled).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,7 +7,6 @@ metadata:
   namespace: flux-system
 data:
   values.yaml: |
-    profile: minimal
     # Zarf seeds the pull secret into flux-system (this release's namespace);
     # copy it into each package namespace so rewritten image refs can pull.
     imagePullSecret:

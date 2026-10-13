@@ -1,9 +1,10 @@
 kind: ZarfPackageConfig
 metadata:
-  name: bigbang-core-minimal
+  name: bigbang-core
   version: "0.1.0"
   description: >-
-    Big Bang core, minimal profile (operator + CRDs + Istio) for airgapped
+    Big Bang core (full default stack: operator, CRDs, Istio, Kyverno +
+    policies + reporter, monitoring, Loki, Grafana, Alloy) for airgapped
     install via Zarf. Mirrors this repo into the in-cluster git and the core
     images into the in-cluster registry; the zarf-agent rewrites the Flux
     GitRepository and pod image references automatically.
@@ -16,7 +17,7 @@ components:
   # reconcile.
   - name: bigbang-core
     required: true
-    description: "GitRepository + parent HelmRelease (profile=minimal), reconciled by Flux"
+    description: "GitRepository + parent HelmRelease (full default stack), reconciled by Flux"
     # Mirror the whole repo into the in-cluster gitea (the core charts are
     # vendored, so no helm-repo pulls happen at reconcile time). Resolved at
     # `zarf package create` — swap to a ###ZARF_PKG_TMPL_*### to parameterize.
@@ -26,13 +27,53 @@ components:
       - name: bigbang-core
         namespace: flux-system
         files:
-          - manifests/core-values-minimal.yaml
+          - manifests/core-values.yaml
           - manifests/bigbang-core.yaml
-    # Everything the minimal profile actually pulls. The zarf-agent rewrites
-    # these refs on the running pods to the in-cluster registry. Extend this
-    # list (from each chart's helm.sh/images annotation) for larger profiles.
+    # Every image the full non-ambient stack pulls, from each chart's
+    # helm.sh/images annotation (istio-cni/ztunnel are ambient-only and omitted).
+    # The zarf-agent rewrites these refs on the running pods to the in-cluster
+    # registry. For the ambient profile, add the istio-cni/ztunnel images.
     images:
       - ghcr.io/rjferguson21/bigbang-operator:0.3.2
+      - registry1.dso.mil/ironbank/big-bang/base:2.1.0
+      - registry1.dso.mil/ironbank/big-bang/cypress:16.1.0
+      - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.0.1
+      - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.2.1
+      - registry1.dso.mil/ironbank/grafana/grafana-enterprise-logs:v3.6.5
+      - registry1.dso.mil/ironbank/kiwigrid/k8s-sidecar:2.11.2
+      - registry1.dso.mil/ironbank/kiwigrid/k8s-sidecar:2.8.1
+      - registry1.dso.mil/ironbank/nirmata/policy-reporter/policy-reporter-ui:2.5.1
+      - registry1.dso.mil/ironbank/opensource/bats/bats:1.13.0
+      - registry1.dso.mil/ironbank/opensource/bats/bats:1.14.0
+      - registry1.dso.mil/ironbank/opensource/grafana/alloy-operator:1.11.0
+      - registry1.dso.mil/ironbank/opensource/grafana/alloy:v1.18.0
+      - registry1.dso.mil/ironbank/opensource/grafana/grafana-image-renderer:v5.12.3
+      - registry1.dso.mil/ironbank/opensource/grafana/helm-chart-toolbox-kubectl:1.0
+      - registry1.dso.mil/ironbank/opensource/grafana/loki:3.7.1
+      - registry1.dso.mil/ironbank/opensource/ingress-nginx/kube-webhook-certgen:v1.6.9
       - registry1.dso.mil/ironbank/opensource/istio/pilot:1.30.4
       - registry1.dso.mil/ironbank/opensource/istio/proxyv2:1.30.4
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kube-state-metrics:v2.19.1
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.34
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.34.6
       - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.35
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.35.6
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.37
+      - registry1.dso.mil/ironbank/opensource/kyverno:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/background-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/cleanup-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyvernocli:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyvernopre:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/readiness-checker:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/reports-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/policy-reporter:3.7.3
+      - registry1.dso.mil/ironbank/opensource/kyverno/policy-reporter/kyverno-plugin:0.6.0
+      - registry1.dso.mil/ironbank/opensource/prometheus/alertmanager:v0.33.1
+      - registry1.dso.mil/ironbank/opensource/prometheus/blackbox_exporter:v0.28.0
+      - registry1.dso.mil/ironbank/opensource/prometheus/node-exporter:v1.11.1
+      - registry1.dso.mil/ironbank/opensource/prometheus/prometheus:v3.13.0
+      - registry1.dso.mil/ironbank/opensource/prometheus/snmp_exporter:v0.30.1
+      - registry1.dso.mil/ironbank/opensource/prometheus-operator/prometheus-config-reloader:v0.92.1
+      - registry1.dso.mil/ironbank/opensource/prometheus-operator/prometheus-operator:v0.92.1
+      - registry1.dso.mil/ironbank/opensource/thanos/thanos:v0.41.0
+      - registry1.dso.mil/ironbank/redhat/ubi/ubi9-minimal:9.8
