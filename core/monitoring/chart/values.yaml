@@ -260,6 +260,13 @@ upstream:
           pullPolicy: IfNotPresent
       patch:
         enabled: true
+        # This one-shot cert-signing Job calls the kube API on startup and exits;
+        # with an istio sidecar its create container races the proxy and fails
+        # (EOF to the API). holdApplicationUntilProxyStarts is a no-op under
+        # native sidecars, so keep the Job out of the mesh entirely — it has no
+        # reason to be in it.
+        podAnnotations:
+          sidecar.istio.io/inject: "false"
         image:
           registry: registry1.dso.mil
           repository: ironbank/opensource/ingress-nginx/kube-webhook-certgen
