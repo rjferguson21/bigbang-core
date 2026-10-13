@@ -60,12 +60,12 @@ components:
       - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.35.6
       - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.37
       - registry1.dso.mil/ironbank/opensource/kyverno:v1.19.1
-      - registry1.dso.mil/ironbank/opensource/kyverno/background-controller:v1.19.1
-      - registry1.dso.mil/ironbank/opensource/kyverno/cleanup-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyverno/background-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyverno/cleanup-controller:v1.19.1
       - registry1.dso.mil/ironbank/opensource/kyverno/kyvernocli:v1.19.1
       - registry1.dso.mil/ironbank/opensource/kyverno/kyvernopre:v1.19.1
-      - registry1.dso.mil/ironbank/opensource/kyverno/readiness-checker:v1.19.1
-      - registry1.dso.mil/ironbank/opensource/kyverno/reports-controller:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyverno/readiness-checker:v1.19.1
+      - registry1.dso.mil/ironbank/opensource/kyverno/kyverno/reports-controller:v1.19.1
       - registry1.dso.mil/ironbank/opensource/kyverno/policy-reporter:3.7.3
       - registry1.dso.mil/ironbank/opensource/kyverno/policy-reporter/kyverno-plugin:0.6.0
       - registry1.dso.mil/ironbank/opensource/prometheus/alertmanager:v0.33.1
