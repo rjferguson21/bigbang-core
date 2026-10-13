@@ -11,3 +11,17 @@ data:
     # copy it into each package namespace so rewritten image refs can pull.
     imagePullSecret:
       copyFromReleaseNamespace: true
+    # The zarf-agent rewrites every image to the in-cluster registry, so add it
+    # to kyverno's approved registries (127.0.0.1:31999 is Zarf's default
+    # NodePort); otherwise restrict-image-registries blocks the rewritten pods.
+    packages:
+      kyverno-policies:
+        values:
+          policies:
+            restrict-image-registries:
+              parameters:
+                allow:
+                  - registry1.dso.mil
+                  - registry.dso.mil
+                  - ghcr.io
+                  - 127.0.0.1:31999
