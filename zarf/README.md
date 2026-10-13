@@ -4,34 +4,58 @@ A [Zarf](https://zarf.dev) package that installs **bigbang-core, minimal profile
 (operator + CRDs + Istio) into an airgapped cluster. Zarf mirrors this repo into
 the in-cluster git and the core images into the in-cluster registry, and its
 admission agent rewrites the Flux `GitRepository` and pod image references
-automatically — so no manual hub-rewrite overlay or pull secret is needed.
+automatically — so no manual hub-rewrite overlay is needed.
+
+Two integration points the agent does **not** cover, handled here:
+- **Pull secret.** The agent injects `imagePullSecrets: private-registry` into
+  pods but only seeds the secret into namespaces that exist at deploy time. The
+  core chart copies it into every package namespace when
+  `imagePullSecret.copyFromReleaseNamespace=true` (set in the minimal values).
+- **Gateway proxy tag.** Zarf rewrites the injected istio-proxy tag to
+  `:<ver>-zarf-<hash>`; the gateway wait job compares only the version prefix so
+  it no longer loops (gateway chart `1.30.4-bb.4`).
+
+## Quick start (local demo)
+A cluster with Flux must already exist — e.g. `task cluster:recreate UPSTREAM_IMAGES=true`.
+Then from the repo root:
+```bash
+task zarf:up          # zarf init + package create + deploy + gateway cert
+```
+Individual steps: `task zarf:init`, `task zarf:create`, `task zarf:deploy`,
+`task zarf:gateway:cert`, `task zarf:remove`. See `zarf/Taskfile.yml`.
 
 ## Prerequisites (in the airgap)
-- A Zarf-initialised cluster (`zarf init` — provides the in-cluster registry, gitea, and agent).
-- **Flux** (`helm-controller` + `source-controller`) already installed — deploy it first via its own Zarf package/init. bigbang-core's parent chart emits `HelmRelease` + `Package` CRs that Flux and the bigbang-operator reconcile.
-- The gateway TLS secret `public-cert` in the `istio-gateway` namespace (the dev flow creates it from the umbrella cert; supply your own in a real environment).
+- A Zarf-initialised cluster with the **git-server** component
+  (`zarf init --components git-server` — in-cluster registry, gitea, and agent).
+- **Flux** (`helm-controller` + `source-controller`) already installed.
+  bigbang-core's parent chart emits `HelmRelease` + `Package` CRs that Flux and
+  the bigbang-operator reconcile.
+- The gateway TLS secret `public-cert` in the `istio-gateway` namespace
+  (`task zarf:gateway:cert` creates it from the umbrella dev cert; supply your
+  own in a real environment).
 
 ## Build (connected side)
 ```bash
 zarf package create zarf/
 ```
-Zarf clones `REPO_URL@TARGET_REVISION` and pulls the images listed in `zarf.yaml`.
+Zarf mirrors the repo in `zarf.yaml`'s `repos:` and pulls the images in `images:`.
+Both are resolved at **create** time (not deploy), so they are literals in
+`zarf.yaml` rather than Zarf variables.
 
 ## Deploy (airgap side)
 ```bash
-zarf package deploy zarf-package-bigbang-core-minimal-*.tar.zst \
-  --set REPO_URL=https://github.com/rjferguson21/bigbang-core.git \
-  --set TARGET_REVISION=main
+zarf package deploy zarf-package-bigbang-core-minimal-*.tar.zst --confirm
 ```
-Zarf pushes the images, mirrors the repo into gitea, applies the `bigbang-core-values`
-ConfigMap (`profile: minimal`) and the parent `GitRepository`/`HelmRelease`; the
-agent repoints the GitRepository to gitea and rewrites pod images to the registry.
+Zarf pushes the images, mirrors the repo into gitea, applies the
+`bigbang-core-values` ConfigMap (`profile: minimal`) and the parent
+`GitRepository`/`HelmRelease`; the agent repoints the GitRepository to gitea and
+rewrites pod images to the in-cluster registry.
 
 ## Extending beyond minimal
-- Change the profile: edit `manifests/core-values-minimal.yaml` (drop `profile: minimal`
-  for the full stack, or set `profile: ambient`).
-- Add the extra images to `zarf.yaml`'s `images:` — the full set is enumerable from each
-  chart's `helm.sh/images` annotation:
+- Change the profile: edit `manifests/core-values-minimal.yaml` (drop
+  `profile: minimal` for the full stack, or set `profile: ambient`).
+- Add the extra images to `zarf.yaml`'s `images:` — the full set is enumerable
+  from each chart's `helm.sh/images` annotation:
   ```bash
   for c in core/*/chart/Chart.yaml; do yq '.annotations."helm.sh/images"' "$c"; done \
     | grep 'image:' | sed 's/.*image: //' | sort -u
@@ -39,6 +63,9 @@ agent repoints the GitRepository to gitea and rewrites pod images to the registr
   (plus a few subchart `image:` refs in monitoring/loki/alloy `values.yaml`).
 
 ## Notes / not yet done
-- **Prototype, not deploy-tested** in a real airgap — authored and `zarf dev lint`-clean only.
+- **Deploy-tested locally** against a `zarf init`-ed k3d cluster (minimal
+  profile) — not yet exercised in a real disconnected environment.
 - Flux is assumed present; bundling it as its own component/package is a follow-up.
 - Images use tags, not digests (lint warns) — pin for production.
+- The repo + GitRepository branch are literals (`main`). For a different branch,
+  edit both `zarf.yaml` (`repos:`) and `manifests/bigbang-core.yaml` (`ref.branch`).
