@@ -1,0 +1,77 @@
+version: "3"
+
+# Local airgap demo of bigbang-core via Zarf (minimal profile). Included by the
+# root Taskfile as `zarf:*` (run with dir: zarf). Assumes a cluster with Flux
+# already exists — e.g. `task cluster:recreate UPSTREAM_IMAGES=true`.
+#
+#   task zarf:up        # init + create + deploy + gateway cert (full demo)
+#   task zarf:init      # in-cluster registry + gitea git-server + agent
+#   task zarf:create    # build the package (repo + core images)
+#   task zarf:deploy    # push images, mirror repo to gitea, apply manifests
+#   task zarf:remove    # remove the deployed package
+#
+# zarf init brings up the in-cluster registry, gitea and the mutating agent;
+# deploy pushes the core images, mirrors this repo into gitea and applies the
+# Flux manifests. The agent rewrites image + GitRepository refs to the
+# in-cluster services, and the core chart copies the Zarf pull secret into each
+# package namespace (imagePullSecret.copyFromReleaseNamespace).
+
+vars:
+  CTX: k3d-bb-helm
+  ARCH: amd64
+  ZARF_INIT_VERSION: v0.85.0
+  PACKAGE_NAME: bigbang-core-minimal
+  PACKAGE_VERSION: "0.1.0"
+  PACKAGE: 'zarf-package-{{.PACKAGE_NAME}}-{{.ARCH}}-{{.PACKAGE_VERSION}}.tar.zst'
+  FLUX_NAMESPACE: flux-system
+  BIGBANG_REPO: /home/rob/bb/bigbang
+  BIGBANG_CERTS_URL: https://repo1.dso.mil/big-bang/bigbang/-/raw/master/chart/ingress-certs.yaml
+
+tasks:
+  init:
+    desc: "zarf init: in-cluster registry + gitea git-server + mutating agent (clears bb-k3d's conflicting local-registry-hosting CM)"
+    cmds:
+      - kubectl --context {{.CTX}} delete configmap local-registry-hosting -n kube-public --ignore-not-found
+      - test -f zarf-init-{{.ARCH}}-{{.ZARF_INIT_VERSION}}.tar.zst || zarf package pull oci://ghcr.io/zarf-dev/packages/init:{{.ZARF_INIT_VERSION}} -a {{.ARCH}}
+      - zarf init --components git-server --confirm
+
+  create:
+    desc: "Build the minimal Zarf package (bundles this repo + the core images)"
+    cmds:
+      - zarf package create . --confirm
+
+  deploy:
+    desc: "Deploy the minimal Zarf package: push images, mirror repo to gitea, apply the Flux manifests (the agent rewrites refs)"
+    cmds:
+      - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
+      - zarf package deploy {{.PACKAGE}} --confirm
+
+  gateway:cert:
+    desc: "Create the gateway TLS secret (public-cert) once the core chart has created the istio-gateway namespace"
+    cmds:
+      - |
+        until kubectl --context {{.CTX}} get namespace istio-gateway >/dev/null 2>&1; do sleep 3; done
+        if kubectl --context {{.CTX}} -n istio-gateway get secret public-cert >/dev/null 2>&1; then exit 0; fi
+        tmp=$(mktemp -d)
+        certs={{.BIGBANG_REPO}}/chart/ingress-certs.yaml
+        if [ ! -f "$certs" ]; then
+          certs="$tmp/ingress-certs.yaml"
+          curl -fsSL -o "$certs" "{{.BIGBANG_CERTS_URL}}"
+        fi
+        yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+        yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+        kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
+        rm -rf "$tmp"
+
+  up:
+    desc: "Full local airgap demo: init + create + deploy + gateway cert. A cluster with Flux must already exist (e.g. task cluster:recreate UPSTREAM_IMAGES=true)."
+    cmds:
+      - task: init
+      - task: create
+      - task: deploy
+      - task: gateway:cert
+
+  remove:
+    desc: "Remove the deployed Zarf package"
+    cmds:
+      - zarf package remove {{.PACKAGE_NAME}} --confirm

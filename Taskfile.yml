@@ -1,5 +1,11 @@
 version: "3"
 
+includes:
+  # Local airgap demo via Zarf (minimal profile) — `task zarf:up`, etc.
+  zarf:
+    taskfile: zarf/Taskfile.yml
+    dir: zarf
+
 # Dev harness for bigbang-core. Creates a k3d cluster from the bb-k3d chart
 # (MetalLB + Flux bootstrap, registry1 pull-through cache), then deploys the
 # core stack (operator, CRDs, Istio, Kyverno, observability) and the app
