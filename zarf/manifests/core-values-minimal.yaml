@@ -1,0 +1,10 @@
+# Overrides read by the parent HelmRelease (valuesFrom this ConfigMap).
+# profile=minimal selects core/profiles/minimal.yaml (operator + CRDs + Istio).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bigbang-core-values
+  namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+data:
+  values.yaml: |
+    profile: minimal

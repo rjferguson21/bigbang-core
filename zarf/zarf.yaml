@@ -1,0 +1,48 @@
+kind: ZarfPackageConfig
+metadata:
+  name: bigbang-core-minimal
+  version: "0.1.0"
+  description: >-
+    Big Bang core, minimal profile (operator + CRDs + Istio) for airgapped
+    install via Zarf. Mirrors this repo into the in-cluster git and the core
+    images into the in-cluster registry; the zarf-agent rewrites the Flux
+    GitRepository and pod image references automatically.
+  url: https://github.com/rjferguson21/bigbang-core
+
+variables:
+  - name: REPO_URL
+    description: Git URL Zarf mirrors into the in-cluster gitea; the Flux GitRepository points here and the agent repoints it.
+    default: https://github.com/rjferguson21/bigbang-core.git
+  - name: TARGET_REVISION
+    description: Branch, tag, or commit of the repo to deploy.
+    default: main
+  - name: FLUX_NAMESPACE
+    description: Namespace holding the GitRepository + parent HelmRelease.
+    default: flux-system
+
+components:
+  # Flux (helm-controller + source-controller) is a prerequisite — deploy it
+  # first via its own Zarf package / init. See zarf/README.md. bigbang-core's
+  # parent chart emits HelmRelease + Package CRs that Flux + the operator
+  # reconcile.
+  - name: bigbang-core
+    required: true
+    description: "GitRepository + parent HelmRelease (profile=minimal), reconciled by Flux"
+    # Mirror the whole repo into the in-cluster gitea (the core charts are
+    # vendored, so no helm-repo pulls happen at reconcile time).
+    repos:
+      - "###ZARF_VAR_REPO_URL###@###ZARF_VAR_TARGET_REVISION###"
+    manifests:
+      - name: bigbang-core
+        namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+        files:
+          - manifests/core-values-minimal.yaml
+          - manifests/bigbang-core.yaml
+    # Everything the minimal profile actually pulls. The zarf-agent rewrites
+    # these refs on the running pods to the in-cluster registry. Extend this
+    # list (from each chart's helm.sh/images annotation) for larger profiles.
+    images:
+      - ghcr.io/rjferguson21/bigbang-operator:0.3.2
+      - registry1.dso.mil/ironbank/opensource/istio/pilot:1.30.4
+      - registry1.dso.mil/ironbank/opensource/istio/proxyv2:1.30.4
+      - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.35
