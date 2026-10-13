@@ -1,3 +1,8 @@
 k3d/.k3d.rendered.yaml
 tests/node_modules/
 tests/test-results/
+
+# Zarf build artifacts
+zarf-package-*.tar.zst
+zarf-init-*.tar.zst
+zarf-config.toml

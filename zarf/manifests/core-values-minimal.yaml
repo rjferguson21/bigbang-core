@@ -4,7 +4,11 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: bigbang-core-values
-  namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+  namespace: flux-system
 data:
   values.yaml: |
     profile: minimal
+    # Zarf seeds the pull secret into flux-system (this release's namespace);
+    # copy it into each package namespace so rewritten image refs can pull.
+    imagePullSecret:
+      copyFromReleaseNamespace: true

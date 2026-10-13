@@ -1,23 +1,23 @@
 # Parent release: a GitRepository for this repo + a HelmRelease sourcing the
-# core chart (which renders the child HelmRelease per core package). This is the
-# Zarf-templated copy of core/bigbang-core.yaml — Zarf substitutes the ZARF_VAR
-# placeholders, and the zarf-agent repoints spec.url to the in-cluster gitea.
+# core chart (which renders the child HelmRelease per core package). Copy of
+# core/bigbang-core.yaml; the zarf-agent repoints spec.url to the in-cluster gitea.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: bigbang-core
-  namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+  namespace: flux-system
 spec:
   interval: 1m
-  url: "###ZARF_VAR_REPO_URL###"
+  # Must match the repos: entry in zarf.yaml so the zarf-agent repoints it to gitea.
+  url: "https://github.com/rjferguson21/bigbang-core.git"
   ref:
-    branch: "###ZARF_VAR_TARGET_REVISION###"
+    branch: main
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: bigbang-core
-  namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+  namespace: flux-system
 spec:
   interval: 1m
   install:

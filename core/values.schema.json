@@ -41,6 +41,21 @@
         }
       }
     },
+    "imagePullSecret": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Airgap/Zarf: copy the registry pull secret from the release namespace into every package namespace.",
+      "properties": {
+        "copyFromReleaseNamespace": {
+          "type": "boolean",
+          "description": "When true, copy the pull secret (imagePullSecret.name) from the release namespace into each enabled package namespace so rewritten image refs can authenticate to the in-cluster registry."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the pull secret to copy (and to create in each package namespace)."
+        }
+      }
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,

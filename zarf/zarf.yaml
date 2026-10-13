@@ -9,17 +9,6 @@ metadata:
     GitRepository and pod image references automatically.
   url: https://github.com/rjferguson21/bigbang-core
 
-variables:
-  - name: REPO_URL
-    description: Git URL Zarf mirrors into the in-cluster gitea; the Flux GitRepository points here and the agent repoints it.
-    default: https://github.com/rjferguson21/bigbang-core.git
-  - name: TARGET_REVISION
-    description: Branch, tag, or commit of the repo to deploy.
-    default: main
-  - name: FLUX_NAMESPACE
-    description: Namespace holding the GitRepository + parent HelmRelease.
-    default: flux-system
-
 components:
   # Flux (helm-controller + source-controller) is a prerequisite — deploy it
   # first via its own Zarf package / init. See zarf/README.md. bigbang-core's
@@ -29,12 +18,13 @@ components:
     required: true
     description: "GitRepository + parent HelmRelease (profile=minimal), reconciled by Flux"
     # Mirror the whole repo into the in-cluster gitea (the core charts are
-    # vendored, so no helm-repo pulls happen at reconcile time).
+    # vendored, so no helm-repo pulls happen at reconcile time). Resolved at
+    # `zarf package create` — swap to a ###ZARF_PKG_TMPL_*### to parameterize.
     repos:
-      - "###ZARF_VAR_REPO_URL###@###ZARF_VAR_TARGET_REVISION###"
+      - "https://github.com/rjferguson21/bigbang-core.git"
     manifests:
       - name: bigbang-core
-        namespace: "###ZARF_VAR_FLUX_NAMESPACE###"
+        namespace: flux-system
         files:
           - manifests/core-values-minimal.yaml
           - manifests/bigbang-core.yaml
