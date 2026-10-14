@@ -1,10 +1,10 @@
 version: "3"
 
 # Local airgap demo of bigbang-core via Zarf (full default stack). Included by
-# the root Taskfile as `zarf:*` (run with dir: zarf). Assumes a cluster with
-# Flux already exists — e.g. `task cluster:recreate UPSTREAM_IMAGES=true`.
+# the root Taskfile as `zarf:*` (run with dir: zarf).
 #
-#   task zarf:up        # init + create + deploy + gateway cert (full demo)
+#   task zarf:up        # cluster + init + create + deploy + gateway cert (full demo)
+#   task zarf:cluster   # create the k3d cluster (bb-k3d public images; no-op if it exists)
 #   task zarf:init      # in-cluster registry + gitea git-server + agent
 #   task zarf:create    # build the package (repo + core images)
 #   task zarf:deploy    # push images, mirror repo to gitea, apply manifests
@@ -17,6 +17,7 @@ version: "3"
 # package namespace (imagePullSecret.copyFromReleaseNamespace).
 
 vars:
+  CLUSTER: bb-helm
   CTX: k3d-bb-helm
   ARCH: amd64
   ZARF_INIT_VERSION: v0.85.0
@@ -28,6 +29,17 @@ vars:
   BIGBANG_CERTS_URL: https://repo1.dso.mil/big-bang/bigbang/-/raw/master/chart/ingress-certs.yaml
 
 tasks:
+  cluster:
+    desc: "Create the k3d cluster for the airgap demo (bb-k3d bootstrap with public images; no-op if it already exists)"
+    # Run from the repo root so the root Taskfile's cluster:recreate resolves
+    # its relative paths (k3d/.rendered). UPSTREAM_IMAGES=true drops the
+    # registry1 requirement — the core images come from Zarf, not the bootstrap.
+    dir: '{{.ROOT_DIR}}'
+    status:
+      - k3d cluster list {{.CLUSTER}}
+    cmds:
+      - task cluster:recreate UPSTREAM_IMAGES=true
+
   init:
     desc: "zarf init: in-cluster registry + gitea git-server + mutating agent (clears bb-k3d's conflicting local-registry-hosting CM)"
     cmds:
@@ -64,8 +76,9 @@ tasks:
         rm -rf "$tmp"
 
   up:
-    desc: "Full local airgap demo: init + create + deploy + gateway cert. A cluster with Flux must already exist (e.g. task cluster:recreate UPSTREAM_IMAGES=true)."
+    desc: "Full local airgap demo: create cluster + zarf init + package create + deploy + gateway cert."
     cmds:
+      - task: cluster
       - task: init
       - task: create
       - task: deploy

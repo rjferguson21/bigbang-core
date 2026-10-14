@@ -20,13 +20,14 @@ Two integration points the agent does **not** cover, handled here:
   it no longer loops (gateway chart `1.30.4-bb.4`).
 
 ## Quick start (local demo)
-A cluster with Flux must already exist — e.g. `task cluster:recreate UPSTREAM_IMAGES=true`.
-Then from the repo root:
+From the repo root:
 ```bash
-task zarf:up          # zarf init + package create + deploy + gateway cert
+task zarf:up          # cluster + zarf init + package create + deploy + gateway cert
 ```
-Individual steps: `task zarf:init`, `task zarf:create`, `task zarf:deploy`,
-`task zarf:gateway:cert`, `task zarf:remove`. See `zarf/Taskfile.yml`.
+`zarf:up` creates the k3d cluster itself (bb-k3d bootstrap with public Flux/MetalLB
+images; the core images come from Zarf), so nothing needs to exist first.
+Individual steps: `task zarf:cluster`, `task zarf:init`, `task zarf:create`,
+`task zarf:deploy`, `task zarf:gateway:cert`, `task zarf:remove`. See `zarf/Taskfile.yml`.
 
 ## Prerequisites (in the airgap)
 - A Zarf-initialised cluster with the **git-server** component
