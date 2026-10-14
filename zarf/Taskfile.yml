@@ -25,6 +25,9 @@ vars:
   PACKAGE_VERSION: "0.1.0"
   PACKAGE: 'zarf-package-{{.PACKAGE_NAME}}-{{.ARCH}}-{{.PACKAGE_VERSION}}.tar.zst'
   FLUX_NAMESPACE: flux-system
+  # Retry count for `zarf package deploy` (default 3); higher rides through the
+  # flaky port-forward image push when deploying the large package locally.
+  RETRIES: '{{.RETRIES | default "15"}}'
   BIGBANG_REPO: /home/rob/bb/bigbang
   BIGBANG_CERTS_URL: https://repo1.dso.mil/big-bang/bigbang/-/raw/master/chart/ingress-certs.yaml
 
@@ -56,7 +59,12 @@ tasks:
     desc: "Deploy the Zarf package: push images, mirror repo to gitea, apply the Flux manifests (the agent rewrites refs)"
     cmds:
       - kubectl --context {{.CTX}} create namespace {{.FLUX_NAMESPACE}} --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -
-      - zarf package deploy {{.PACKAGE}} --confirm
+      # --retries is higher than Zarf's default of 3: pushing this 5GB+ package
+      # to the in-cluster registry over kubectl port-forward drops connections
+      # under load (connection reset / stream timeout). Re-pushes skip images
+      # already present, so the extra attempts just ride through the flakiness.
+      # Not needed in a real airgap where the registry is reachable directly.
+      - zarf package deploy {{.PACKAGE}} --retries {{.RETRIES}} --confirm
 
   gateway:cert:
     desc: "Create the gateway TLS secret (public-cert) once the core chart has created the istio-gateway namespace"
