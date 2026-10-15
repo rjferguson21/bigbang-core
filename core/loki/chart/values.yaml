@@ -1,6 +1,4 @@
 domain: dev.bigbang.mil
-# Default to false, override in openshift-test-values.yaml
-openshift: false
 experimentalMode:
   # -- Toggle enabling of configurations and deployment modes currently unsupported by Big Bang
   enabled: false

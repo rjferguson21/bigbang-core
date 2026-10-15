@@ -80,8 +80,6 @@ bbtests:
     image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
     envs:
       TEMPO_METRICS_URL: 'http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc:3200'
-# -- Toggle or openshift specific config
-openshift: false
 # -- Values to pass to [the upstream tempo chart](https://github.com/grafana/helm-charts/tree/main/charts/tempo/values.yaml)
 # @default -- Upstream chart values
 upstream:

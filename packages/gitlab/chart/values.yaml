@@ -832,8 +832,6 @@ upstream:
 domain: dev.bigbang.mil
 # Used for Istio SSO serviceEntry
 
-openshift: false
-
 bbtests:
   # -- Enable internal Big Bang package tests. This profile and any dependency
   # configuration supplied by tests/test-values*.yaml are unsupported for

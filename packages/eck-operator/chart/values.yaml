@@ -84,9 +84,6 @@ serviceMonitor:
   # -- Enable HTTP/2 for the service monitor scraping endpoint. Default is false for compatibility.
   enableHttp2: false
 
-# Openshift toggle, conditionally modifies networkpolicy for DNS
-openshift: false
-
 # Enterprise license
 license:
   trial: false # Toggle to enable the trial license for development use

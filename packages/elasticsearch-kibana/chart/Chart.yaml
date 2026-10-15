@@ -1,7 +1,7 @@
 apiVersion: v2
 name: elasticsearch-kibana
 description: Configurable Deployment of Elasticsearch and Kibana Custom Resources Wrapped Inside a Helm Chart. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
-version: 1.44.0-bb.1
+version: 1.44.0-bb.2
 appVersion: 9.5.4
 dependencies:
   - name: gluon

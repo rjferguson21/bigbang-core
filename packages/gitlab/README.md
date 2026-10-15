@@ -326,7 +326,6 @@ helm install gitlab chart/
 | upstream.gitlab.praefect.resources.limits.cpu | int | `1` |  |
 | upstream.gitlab.praefect.resources.limits.memory | string | `"1Gi"` |  |
 | domain | string | `"dev.bigbang.mil"` |  |
-| openshift | bool | `false` |  |
 | bbtests.enabled | bool | `false` | Enable internal Big Bang package tests. This profile and any dependency configuration supplied by tests/test-values*.yaml are unsupported for consumer deployments. |
 | bbtests.scripts.image | string | `"registry1.dso.mil/ironbank/big-bang/devops-tester:1.3"` |  |
 | bbtests.scripts.additionalVolumes[0].name | string | `"docker-config"` |  |

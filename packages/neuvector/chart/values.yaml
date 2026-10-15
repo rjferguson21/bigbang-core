@@ -147,7 +147,6 @@ upstream:
   nameOverride: neuvector
   fullnameOverride: neuvector-neuvector
   bootstrapPassword: changeme$! # neuvector enforces a mandatory password change on first login
-  openshift: false
   registry: registry1.dso.mil
   tag: 5.5.1
   imagePullSecrets: private-registry

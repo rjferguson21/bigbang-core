@@ -566,8 +566,6 @@ bigbangPackage:
         selector:
           app.kubernetes.io/name: alertmanager
     outbound: {}
-# Toggles networkpolicy needed for openshift
-openshift: false
 kiali:
   enabled: false
 sso:

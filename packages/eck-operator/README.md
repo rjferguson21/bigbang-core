@@ -7,7 +7,7 @@ Big Bang wrapper chart for the upstream [eck-operator](https://github.com/elasti
 - The upstream `eck-operator` chart is a dependency under the `upstream` alias (same as repo1).
 - `chart/templates/bigbang/package.yaml` renders the `Package` CR from `bigbangPackage.istio` and `bigbangPackage.networkPolicies` — the same value shapes bb-common uses, nested under `bigbangPackage`. Values are passed through `tpl`, so templated values work.
 - The validating webhook PeerAuthentication exception (`webhook-peer-authentication.yaml`, PERMISSIVE on port 9443) stays a chart template and now reads from the `bigbangPackage` tree.
-- Other Big Bang extras (metrics Service/ServiceMonitor, enterprise license secret, CRD upgrade job, OpenShift bindings) are unchanged chart templates.
+- Other Big Bang extras (metrics Service/ServiceMonitor, enterprise license secret, CRD upgrade job) are unchanged chart templates.
 
 ## Prerequisites
 
