@@ -60,12 +60,12 @@ REPO_URL=… TARGET_REVISION=main FLUX_NAMESPACE=flux-system \
 ```
 
 For single-package testing, deploy just the operator + CRDs + istio with
-`task core:deploy CORE_VALUES=dev/values/core-minimal.yaml` (the parent
-HelmRelease reads overrides from the optional `bigbang-core-values`
-ConfigMap), then `task package:deploy PKG=<name> ...`. `CORE_VALUES` also
-takes a comma-separated list, merged in order; without registry1 credentials
-add `dev/values/upstream-images.yaml` (public istio images via
-mirror.gcr.io). `task ci` runs that combination on a cluster created with
+`task core:deploy PROFILE=minimal` (the parent HelmRelease reads overrides
+from the optional `bigbang-core-values` ConfigMap), then
+`task package:deploy PKG=<name> ...`. `CORE_VALUES` takes a comma-separated
+list of overlay files, merged in order and composable with `PROFILE=`;
+without registry1 credentials add `dev/values/upstream-images.yaml` (public
+istio images via mirror.gcr.io). `task ci` runs that combination on a cluster created with
 `UPSTREAM_IMAGES=true`, and `.github/workflows/ci.yaml` runs it on every
 push and pull request.
 
