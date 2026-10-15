@@ -39,7 +39,7 @@ task                       # the whole thing: cluster → core → all app packa
 ```
 core/              # Flux parent chart + the core packages (operator, Istio, Kyverno, observability)
 packages/          # app packages (keycloak, gitlab, kiali, logging, security tools, …)
-dev/values/        # overlays for the dev/CI clusters (core-minimal, upstream-images, per-package tweaks)
+dev/values/        # overlays for the dev/CI clusters (upstream-images, per-package tweaks)
 tests/             # shared end-to-end suite, run against a deployed cluster
 docs/              # project documentation (published to GitHub Pages)
 Taskfile.yml       # dev harness: k3d cluster, core via Flux, packages via helm

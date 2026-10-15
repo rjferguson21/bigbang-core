@@ -15,7 +15,7 @@ includes:
 #   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
-#   task ci                         # CI profile: cluster without registry1 creds + core-minimal on upstream images
+#   task ci                         # CI profile: cluster without registry1 creds + minimal profile on upstream images
 #
 # With no REPO_URL, core:deploy/up auto-run gitea:up (a local gitea on the
 # cluster network seeded from the working tree) and deploy from it.
@@ -261,7 +261,7 @@ tasks:
       # explicit REPO_URL wins; otherwise fall back to the local dev gitea
       SRC_URL: '{{.REPO_URL | default .GITEA_REPO_URL}}'
       # optional overrides for the core chart: one file or a comma-separated
-      # list merged in order (e.g. dev/values/core-minimal.yaml,dev/values/upstream-images.yaml)
+      # list merged in order (e.g. dev/values/upstream-images.yaml; composable with PROFILE=)
       CORE_VALUES: '{{.CORE_VALUES | default ""}}'
       # optional named profile baked into the chart (core/profiles/<name>.yaml), e.g. minimal, ambient
       PROFILE: '{{.PROFILE | default ""}}'

@@ -1,19 +1,19 @@
-# Upstream (public) image overlay for the core-minimal profile — for CI and
-# other environments without registry1.dso.mil credentials. Compose with
-# core-minimal:
+# Upstream (public) image overlay for the `minimal` profile — for CI and
+# other environments without registry1.dso.mil credentials. Compose with the
+# minimal profile:
 #
-#   task core:deploy CORE_VALUES=dev/values/core-minimal.yaml,dev/values/upstream-images.yaml
+#   task core:deploy PROFILE=minimal CORE_VALUES=dev/values/upstream-images.yaml
 #
 # Istio only publishes to docker.io/istio (gcr.io/istio-release and
 # registry.istio.io/release retire in late 2026). mirror.gcr.io is Google's
 # public pull-through cache of Docker Hub: same digests as docker.io/istio,
 # no auth, and not subject to Docker Hub's anonymous pull limits.
 #
-# Only the core-minimal set is covered: bigbang-operator already defaults to
+# Only the minimal profile's set is covered: bigbang-operator already defaults to
 # its public GHCR image, istio-crds and prometheus-operator-crds ship no
 # images, and the istio-gateway pod's image is "auto" (istiod's injector
 # rewrites it from the hub below). The ambient data plane (istio-cni, ztunnel)
-# is covered too since it deploys under core-minimal when ambient is enabled.
+# is covered too since it deploys under the minimal profile when ambient is enabled.
 # The full profile (kyverno, monitoring, loki, grafana, alloy) still pulls
 # from registry1.
 packages:
