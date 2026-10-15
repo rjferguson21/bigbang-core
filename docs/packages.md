@@ -10,10 +10,11 @@ App packages (under `packages/`):
 | gitlab | GitLab (external postgres, object storage and redis in dev) |
 | keycloak | Keycloak identity provider |
 | kiali | Kiali service mesh observability |
+| kyverno-reporter | Policy Reporter (Kyverno policy reports UI/metrics) |
 | neuvector | NeuVector container security |
 | tempo | Grafana Tempo tracing |
 | twistlock | Prisma Cloud Compute |
 
 Core packages (under `core/`): bigbang-operator, prometheus-operator-crds,
 istio-crds, istiod, istio-gateway, istio-cni, ztunnel, kyverno,
-kyverno-policies, kyverno-reporter, monitoring, loki, grafana, alloy.
+kyverno-policies, monitoring, loki, grafana, alloy.

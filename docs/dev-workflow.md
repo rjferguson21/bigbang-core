@@ -43,7 +43,7 @@ Packages are tagged into groups you can toggle together; a package renders only
 when its own `enabled` is true **and** its group isn't disabled. Groups
 (default on):
 
-- `policy` — kyverno, kyverno-policies, kyverno-reporter
+- `policy` — kyverno, kyverno-policies
 - `observability` — monitoring, grafana, loki, alloy
 
 (The operator, CRDs and Istio are ungrouped/foundational.) Toggle a group via a

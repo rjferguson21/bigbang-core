@@ -144,8 +144,8 @@ packages:
                 cidr: 172.16.0.0/12
             - ipBlock:
                 cidr: 10.0.0.0/8
-  # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring,
-  # kyverno-reporter, alloy.
+  # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring
+  # and alloy.
   prometheus-operator-crds:
     enabled: true
     releaseName: prometheus-operator-crds
@@ -260,15 +260,6 @@ packages:
             selector:
               matchLabels:
                 app.kubernetes.io/name: ztunnel
-  kyverno-reporter:
-    enabled: true
-    releaseName: kyverno-reporter-kyverno-reporter
-    namespace: kyverno-reporter
-    group: policy
-    chart: core/kyverno-reporter/chart
-    # wave 3 (not 2) so ztunnel (wave 2) is up before this ambient workload
-    wave: 3
-    meshInjection: true
   # --- observability stack ---
   monitoring:
     enabled: true

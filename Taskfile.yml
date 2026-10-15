@@ -361,6 +361,8 @@ tasks:
       - task: package:deploy
         vars: { PKG: tempo, RELEASE: tempo-tempo, NS: tempo }
       - task: package:deploy
+        vars: { PKG: kyverno-reporter, RELEASE: kyverno-reporter-kyverno-reporter, NS: kyverno-reporter }
+      - task: package:deploy
         vars: { PKG: kiali, RELEASE: kiali, NS: kiali }
       - task: package:deploy
         vars: { PKG: keycloak, RELEASE: keycloak-keycloak, NS: keycloak }
