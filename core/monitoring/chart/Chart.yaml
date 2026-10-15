@@ -6,7 +6,7 @@ name: monitoring
 sources:
   - https://github.com/prometheus-community/helm-charts
   - https://github.com/prometheus-operator/kube-prometheus
-version: 87.10.1-bb.5
+version: 87.10.1-bb.6
 # Please do not add a renovate hint here, since appVersion updates involves manual tasks
 appVersion: v0.92.1
 kubeVersion: ">=1.19.0-0"
@@ -90,6 +90,9 @@ annotations:
       image: registry1.dso.mil/ironbank/opensource/thanos/thanos:v0.41.0
       condition: upstream.thanosRuler.enabled
 dependencies:
+  - name: bigbang-operator-package
+    version: 0.5.0-bb.0
+    repository: oci://ghcr.io/rjferguson21/charts
   - name: kube-prometheus-stack
     version: "87.10.1"
     repository: https://prometheus-community.github.io/helm-charts

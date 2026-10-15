@@ -16,6 +16,7 @@ spec:
       name: {{ template "twistlock-console.name" . }}
       namespace: {{ .Release.Namespace }}
       labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
         {{- mergeOverwrite (include "twistlock-console.selector" . | fromYaml) (dict "app.kubernetes.io/name" "twistlock-volume-upgrade-job") | toYaml | nindent 8 }}
       {{- if .Values.annotations }}
       annotations:

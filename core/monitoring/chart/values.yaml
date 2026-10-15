@@ -260,11 +260,7 @@ upstream:
           pullPolicy: IfNotPresent
       patch:
         enabled: true
-        # This one-shot cert-signing Job calls the kube API on startup and exits;
-        # with an istio sidecar its create container races the proxy and fails
-        # (EOF to the API). holdApplicationUntilProxyStarts is a no-op under
-        # native sidecars, so keep the Job out of the mesh entirely — it has no
-        # reason to be in it.
+        # Avoid a sidecar startup dependency for the one-shot certificate Jobs.
         podAnnotations:
           sidecar.istio.io/inject: "false"
         image:
@@ -458,6 +454,8 @@ bigbangPackage:
     enabled: false
     defaultsAsHooks:
       enabled: true
+      hooks: [pre-install, pre-upgrade, post-install, post-upgrade, post-delete]
+      weight: -20
     egress:
       from:
         kube-prometheus-stack-prometheus-operator:
@@ -480,18 +478,17 @@ bigbangPackage:
             k8s:
               # -- Prometheus must be able to scrape any workload in the cluster
               "*": true
-        admission-create-job:
+        admission-hooks:
           podSelector:
             matchLabels:
-              app: kube-prometheus-stack-admission-create
+              app.kubernetes.io/instance: '{{ .Release.Name }}'
+              app.kubernetes.io/component: prometheus-operator-webhook
           metadata:
             annotations:
-              helm.sh/hook: pre-install,pre-upgrade
-              helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+              helm.sh/hook: pre-install,pre-upgrade,post-install,post-upgrade
+              helm.sh/hook-weight: "-10"
           to:
             definition:
-              # -- This pre-install/pre-upgrade job creates webhook resources and
-              # must reach the kubeAPI before normal release netpols exist.
               kubeAPI: true
         alertmanager:
           to:
@@ -504,11 +501,11 @@ bigbangPackage:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: bigbang-metrics-upgrade-job
+              app.kubernetes.io/instance: '{{ .Release.Name }}'
           metadata:
             annotations:
               "helm.sh/hook": pre-upgrade
               "helm.sh/hook-weight": "-10"
-              "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
           to:
             definition:
               kubeAPI: true
@@ -542,8 +539,6 @@ bigbangPackage:
         metadata:
           labels: {}
           annotations: {}
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - prometheus.{{ .Values.domain }}
         service: "{{ printf \"%s-%s\" (include \"kube-prometheus-stack.fullname\" .) \"kube-prometheus\" }}.{{ .Release.Namespace }}.svc.cluster.local"
@@ -556,8 +551,6 @@ bigbangPackage:
         metadata:
           labels: {}
           annotations: {}
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - alertmanager.{{ .Values.domain }}
         service: "{{ printf \"%s-%s\" (include \"kube-prometheus-stack.fullname\" .) \"kube-alertmanager\" }}.{{ .Release.Namespace }}.svc.cluster.local"

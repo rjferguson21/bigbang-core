@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.6] (2026-10-15)
+
+### Changed
+
+- Use the shared operator Helm integration for admission and metrics upgrade hook networking, and inherit the global ingress gateway.
+
+### Fixed
+
+- Allow the metrics upgrade hook to render when optional global image settings are absent.
+
 ## [87.10.1-bb.5] (2026-10-15)
 
 ### Added

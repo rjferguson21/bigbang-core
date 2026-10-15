@@ -36,3 +36,36 @@ labeled `istio.io/dataplane-mode=ambient` instead of `istio-injection=enabled`.
 
 Set `istio.ambient.enabled: false` for classic sidecar mode (istiod injects an
 istio-proxy sidecar into mesh pods; `istio-cni`/`ztunnel` are not deployed).
+
+## Shared ingress configuration
+
+The operator global ConfigMap defines the default public ingress gateway and
+its pod selector and ServiceAccount identity. Configure these under
+`packages.bigbang-operator.values.globalConfig.routes` and `.gateways` in
+`core/values.yaml`. Monitoring, Grafana, Loki, and Policy Reporter inherit the
+gateway list; route-specific `gateways` and Package
+`routes.defaults.inbound.gateways` override the shared default. Standalone
+installs of these charts need one of those defaults or an explicit route list.
+Gateway definitions also apply to packages that retain explicit gateway lists.
+Egress gateway configuration is not enabled.
+
+## Helm hook networking
+
+Monitoring and Twistlock use the vendored `bigbang-operator-package` library
+from operator 0.5.0-bb.0. Their Package templates adapt the existing
+`bigbangPackage` values, preserving metadata and resource naming. The same
+network-policy declarations produce early Helm hook policies and the regular
+Package for persistent reconciliation. Helm 4 and the updated operator/CRD
+must be installed before these packages.
+
+Monitoring declares API access for both admission webhook Jobs and the metrics
+upgrade Job. Twistlock declares it for the volume upgrade Job. Hook selectors
+include the release identity, and policy weights precede the dependent Jobs.
+The helper retains temporary policies until the operator processes its cleanup
+markers; failed operations expire according to `operatorHooks.timeoutSeconds`
+(default 1800). `operatorHooks` is a top-level chart override, including the
+shared ConfigMap location when it differs from the operator defaults.
+
+API target ports and shared definitions are resolved at Helm render time.
+Offline renders cannot resolve them; use a server dry run to verify those
+lookups against the intended cluster.

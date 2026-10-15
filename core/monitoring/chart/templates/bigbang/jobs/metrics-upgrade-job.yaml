@@ -1,4 +1,5 @@
 {{- if .Values.cleanUpgrade.enabled }}
+{{- $global := .Values.global | default dict }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -59,14 +60,15 @@ spec:
       name: metrics-clean-upgrade
       labels:
         app.kubernetes.io/name: bigbang-metrics-upgrade-job
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       serviceAccountName: metrics-upgrade-sa
       imagePullSecrets:
-        {{ toYaml .Values.global.imagePullSecrets | nindent 8 }}
+        {{ toYaml $global.imagePullSecrets | nindent 8 }}
       restartPolicy: OnFailure
       containers:
         - name: metrics-clean-upgrade
-          {{- $registry := .Values.global.imageRegistry | default .Values.cleanUpgrade.image.registry -}}
+          {{- $registry := $global.imageRegistry | default .Values.cleanUpgrade.image.registry -}}
           {{- if .Values.cleanUpgrade.image.sha }}
           image: "{{ $registry }}/{{ .Values.cleanUpgrade.image.repository }}:{{ .Values.cleanUpgrade.image.tag }}@sha256:{{ .Values.cleanUpgrade.image.sha }}"
           {{- else }}

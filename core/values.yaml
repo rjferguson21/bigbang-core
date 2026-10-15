@@ -93,6 +93,17 @@ packages:
       # per-package; package-local definitions still override).
       globalConfig:
         create: true
+        routes:
+          defaults:
+            inbound:
+              gateways:
+                - istio-gateway/public-ingressgateway
+        gateways:
+          istio-gateway/public-ingressgateway:
+            podSelector:
+              matchLabels:
+                app: public-ingressgateway
+            serviceAccountName: public-ingressgateway
         # Shapes match the umbrella's global networkPolicies.*.definitions
         # defaults; narrow the CIDRs per environment as needed.
         egressDefinitions:

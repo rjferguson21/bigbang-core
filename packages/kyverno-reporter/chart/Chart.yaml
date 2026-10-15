@@ -5,7 +5,7 @@ description: |
   It creates Prometheus Metrics and can send rule validation events to different targets like Loki, Elasticsearch, Slack or Discord
   This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 type: application
-version: 3.7.3-bb.3
+version: 3.7.3-bb.4
 appVersion: 3.7.3
 icon: https://github.com/kyverno/kyverno/raw/main/img/logo.png
 home: https://kyverno.github.io/policy-reporter

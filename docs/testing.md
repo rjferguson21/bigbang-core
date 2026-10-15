@@ -17,3 +17,16 @@ task playwright:install                   # deps + chromium (WITH_DEPS=true also
 task playwright:test                      # whole suite
 task playwright:test SPEC=tests/kiali.spec.ts
 ```
+
+## Operator chart integration
+
+Run the render checks before changing gateway defaults or hook networking:
+
+```bash
+python3 -m unittest discover -s tests -p '*_test.py' -v
+```
+
+These checks require Helm 4 and PyYAML. They verify gateway identity against
+its Deployment, route inheritance, hook policy selectors and ordering,
+release isolation, cleanup markers, and disabled networking in rendered
+charts. They do not install workloads or verify network connectivity.
