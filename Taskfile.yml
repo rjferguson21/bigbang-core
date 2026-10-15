@@ -11,7 +11,7 @@ includes:
 # core stack (operator, CRDs, Istio, Kyverno, observability) and the app
 # packages.
 #
-#   task (= up)                     # full stack: recreate cluster + core + all packages
+#   task (= up)                     # recreate cluster + deploy bigbang-core (no app packages)
 #   task core:deploy [REPO_URL=<git>] # core via Flux (REPO_URL optional; defaults to local gitea)
 #   task packages:deploy            # app packages via helm (core must be up)
 #   task down                       # delete the cluster
@@ -54,7 +54,7 @@ vars:
 
 tasks:
   default:
-    desc: "Full stack from scratch (alias for up)"
+    desc: "Recreate the cluster and deploy bigbang-core (alias for up)"
     cmds:
       - task: up
 
@@ -387,11 +387,10 @@ tasks:
       - task: cluster:delete
 
   up:
-    desc: "Full stack from scratch — recreate cluster, deploy core via Flux, then app packages. Set REPO_URL to use a real remote; otherwise a local gitea is used."
+    desc: "From scratch — recreate the cluster and deploy bigbang-core via Flux (no app packages; run packages:deploy separately). Set REPO_URL to use a real remote; otherwise a local gitea is used."
     cmds:
       - task: cluster:recreate
       - task: core:deploy
-      - task: packages:deploy
 
   core:up:
     desc: "Create the cluster and deploy just the core stack (no app packages). UPSTREAM_IMAGES=true, PROFILE=minimal|ambient, and CORE_VALUES=... pass through."
