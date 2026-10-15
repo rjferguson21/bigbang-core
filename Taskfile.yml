@@ -332,12 +332,18 @@ tasks:
         echo "waiting for $expected core HelmReleases to be Ready..."
         deadline=$(( $(date +%s) + 900 ))
         while :; do
-          ready=$(kubectl --context {{.CTX}} -n $ns get helmreleases \
-            -o jsonpath='{range .items[*]}{.metadata.name}{":"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
-            | grep -v '^bigbang-core:' | grep -c ':True$' || true)
-          echo "  $ready/$expected HelmReleases Ready"
+          # name=<Ready status> for every child HelmRelease (exclude the parent)
+          status=$(kubectl --context {{.CTX}} -n $ns get helmreleases \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
+            | grep -v '^bigbang-core=' || true)
+          ready=$(echo "$status" | grep -c '=True$' || true)
+          # HelmReleases that exist but aren't Ready yet (plus a count of any not
+          # created yet, since the parent emits them progressively per dependsOn)
+          waiting=$(echo "$status" | grep -v '=True$' | grep . | cut -d= -f1 | paste -sd, -)
+          pending=$(( expected - ready ))
+          echo "  $ready/$expected HelmReleases Ready${waiting:+ — waiting: $waiting}"
           [ "$ready" -ge "$expected" ] && break
-          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core HelmReleases"; kubectl --context {{.CTX}} -n $ns get helmreleases; exit 1; }
+          [ "$(date +%s)" -ge "$deadline" ] && { echo "timed out waiting for core HelmReleases ($pending not Ready)"; kubectl --context {{.CTX}} -n $ns get helmreleases; exit 1; }
           sleep 10
         done
       - kubectl --context {{.CTX}} -n {{.FLUX_NAMESPACE}} get helmreleases
