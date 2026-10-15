@@ -31,12 +31,19 @@ proxy_images() {
 }
 
 stale_proxy_pods() {
-  local pod image
+  local pod image nodigest tag
 
   while read -r pod image; do
     [[ -z "$pod" ]] && continue
 
-    if [[ -z "$image" || ("$image" != *":$target_version" && "$image" != *":$target_version@"*) ]]; then
+    # Compare only the tag's version prefix. A mirroring registry may append a
+    # suffix to the tag (e.g. Zarf rewrites ...:1.30.4 to ...:1.30.4-zarf-<hash>)
+    # and the image may also carry an @sha256 digest. Strip the digest, take the
+    # tag after the final colon, and treat the pod as current when the tag is the
+    # target version or the target version followed by a '-' suffix.
+    nodigest=${image%%@*}
+    tag=${nodigest##*:}
+    if [[ -z "$image" || ("$tag" != "$target_version" && "$tag" != "$target_version"-*) ]]; then
       echo "$pod"
     fi
   done < <(proxy_images)

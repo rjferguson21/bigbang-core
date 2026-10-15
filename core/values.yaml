@@ -16,15 +16,24 @@ groups:
   observability:
     enabled: true
 
-# Istio mesh mode. When ambient.enabled is true: the istio-cni and ztunnel
-# packages deploy (they're gated with requiresAmbient), istiod runs with
-# ambient/HBONE enabled, every Package CR gets istio.ambient.enabled=true (so
-# the operator generates HBONE-aware policies and drops sidecar resources), and
-# mesh namespaces use istio.io/dataplane-mode=ambient instead of
+# Istio mesh mode. Ambient is the default: the istio-cni and ztunnel packages
+# deploy (they're gated with requiresAmbient), istiod runs with ambient/HBONE
+# enabled, every Package CR gets istio.ambient.enabled=true (so the operator
+# generates HBONE-aware policies and drops sidecar resources), and mesh
+# namespaces use istio.io/dataplane-mode=ambient instead of
 # istio-injection=enabled.
 istio:
   ambient:
-    enabled: false
+    enabled: true
+
+# Airgap/Zarf: packages created by Flux/the operator land in fresh namespaces
+# that have no registry pull secret, so once the zarf-agent rewrites image refs
+# to the in-cluster registry their pods can't authenticate. When enabled, copy
+# the pull secret Zarf seeds into the release namespace into every package
+# namespace. Off for normal installs (no such secret to copy).
+imagePullSecret:
+  copyFromReleaseNamespace: false
+  name: private-registry
 
 # Flux source the child HelmReleases pull their charts from (by path within
 # the repo). Created alongside the parent HelmRelease (core/bigbang-core.yaml);

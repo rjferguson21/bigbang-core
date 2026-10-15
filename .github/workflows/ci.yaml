@@ -9,7 +9,7 @@ on:
 
 jobs:
   core-minimal:
-    name: k3d cluster + core-minimal + kiali (upstream images)
+    name: k3d cluster + core-minimal (ambient) + kiali (upstream images)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -47,10 +47,11 @@ jobs:
           yq --version
 
       # cluster:recreate (bb-k3d with its values-public.yaml, no registry1
-      # creds) + core:deploy with the core-minimal and upstream-images
-      # overlays, sourced from a local gitea seeded with the checkout, then
-      # the kiali package with dev/values/upstream/kiali.yaml.
-      - name: Create cluster, deploy core-minimal and kiali
+      # creds) + core:deploy with the minimal profile and upstream-images
+      # overlay, sourced from a local gitea seeded with the checkout. Ambient is
+      # the default mesh mode, so the task also asserts istio-cni/ztunnel are up
+      # and a probe pod is ambient-enrolled, then deploys the kiali package.
+      - name: Create cluster, deploy core (ambient), assert enrollment, deploy kiali
         run: task ci K3D_VOLUME_DIR="$K3D_VOLUME_DIR"
 
       - name: Set up Node
@@ -85,6 +86,10 @@ jobs:
           kubectl get helmreleases -A || true
           echo "=== Packages ==="
           kubectl get packages -A || true
+          echo "=== istio-system (cni/ztunnel/istiod) ==="
+          kubectl -n istio-system get pods -o wide || true
+          echo "=== ambient-test ==="
+          kubectl -n ambient-test get pods -o yaml | yq '.items[] | {"name": .metadata.name, "annotations": .metadata.annotations}' || true
           echo "=== Pods ==="
           kubectl get pods -A -o wide || true
 
@@ -100,101 +105,6 @@ jobs:
             echo "--- describe $p"; kubectl -n "$ns" describe pod "$name" | tail -40 || true
             echo "--- logs $p"; kubectl -n "$ns" logs "$name" --all-containers --tail=50 || true
           done
-          echo "=== Warning events ==="
-          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60 || true
-          echo "=== Flux controller logs ==="
-          ns=$(kubectl get deploy -A -l app.kubernetes.io/part-of=flux -o jsonpath='{.items[0].metadata.namespace}')
-          kubectl -n "$ns" logs deploy/helm-controller --tail=100 || true
-          kubectl -n "$ns" logs deploy/source-controller --tail=50 || true
-
-      - name: Cleanup
-        if: always()
-        run: |
-          task gitea:down || true
-          task cluster:delete || true
-
-  core-ambient:
-    name: k3d cluster + core-minimal in ambient mode (upstream images)
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    permissions:
-      contents: read
-    env:
-      K3D_VOLUME_DIR: ${{ github.workspace }}/.k3d
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Task
-        uses: go-task/setup-task@v1
-        with:
-          version: 3.x
-
-      - name: Install k3d
-        run: |
-          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-          k3d version
-
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v4.3.0
-
-      - name: Tool versions
-        run: |
-          docker version --format '{{.Server.Version}}'
-          helm version --short
-          kubectl version --client
-          yq --version
-
-      # cluster:recreate + core:deploy with the ambient overlay, assert
-      # istio-cni/ztunnel are up and a probe pod is ambient-enrolled, then
-      # deploy kiali as the smoke-test workload.
-      - name: Create cluster, deploy core in ambient mode, assert enrollment
-        run: task ci:ambient K3D_VOLUME_DIR="$K3D_VOLUME_DIR"
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: tests/package-lock.json
-
-      - name: Install Playwright
-        run: task playwright:install WITH_DEPS=true
-
-      # Smoke test: the kiali UI must be reachable through the gateway in
-      # ambient mode (hosts under *.dev.bigbang.mil resolve to the gateway LB IP).
-      - name: Kiali playwright smoke test
-        run: task playwright:test SPEC=tests/kiali.spec.ts
-
-      - name: Upload playwright traces
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results-ambient
-          path: tests/test-results/
-          if-no-files-found: ignore
-
-      - name: Cluster state
-        if: always()
-        run: |
-          echo "=== Nodes ==="
-          kubectl get nodes -o wide || true
-          echo "=== HelmReleases ==="
-          kubectl get helmreleases -A || true
-          echo "=== istio-system (cni/ztunnel/istiod) ==="
-          kubectl -n istio-system get pods -o wide || true
-          echo "=== ambient-test ==="
-          kubectl -n ambient-test get pods -o yaml | yq '.items[] | {"name": .metadata.name, "annotations": .metadata.annotations}' || true
-
-      - name: Failure diagnostics
-        if: failure()
-        run: |
-          echo "=== HelmRelease conditions ==="
-          kubectl get helmreleases -A -o yaml | yq '.items[] | {"name": .metadata.name, "conditions": .status.conditions}' || true
-          echo "=== Non-running pods ==="
-          kubectl get pods -A --no-headers | grep -vE "Running|Completed" || true
           echo "=== istio-cni / ztunnel logs ==="
           kubectl -n istio-system logs -l k8s-app=istio-cni-node --tail=50 || true
           kubectl -n istio-system logs -l app=ztunnel --tail=50 || true

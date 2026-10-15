@@ -28,9 +28,11 @@ deps.md            # the umbrella's HelmRelease dependency graph, for reference
 
 ## Ambient mode
 
-Setting `istio.ambient.enabled: true` (or the `dev/values/ambient.yaml` overlay)
-switches the mesh to Istio ambient: it deploys the `istio-cni` and `ztunnel`
-packages, runs istiod with ambient/HBONE, sets `istio.ambient.enabled` on every
-Package CR (so the operator generates HBONE-aware policies and drops the sidecar
-resources), and labels mesh namespaces `istio.io/dataplane-mode=ambient` instead
-of `istio-injection=enabled`.
+Istio ambient is the default mesh mode (`istio.ambient.enabled: true`): the
+`istio-cni` and `ztunnel` packages deploy, istiod runs with ambient/HBONE,
+`istio.ambient.enabled` is set on every Package CR (so the operator generates
+HBONE-aware policies and drops the sidecar resources), and mesh namespaces are
+labeled `istio.io/dataplane-mode=ambient` instead of `istio-injection=enabled`.
+
+Set `istio.ambient.enabled: false` for classic sidecar mode (istiod injects an
+istio-proxy sidecar into mesh pods; `istio-cni`/`ztunnel` are not deployed).

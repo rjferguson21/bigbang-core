@@ -1,8 +1,0 @@
-# Enable Istio ambient mesh mode. Apply as a core chart overlay:
-#   task core:deploy CORE_VALUES=dev/values/ambient.yaml
-# Deploys istio-cni + ztunnel, runs istiod with ambient/HBONE, sets
-# istio.ambient.enabled on every Package CR, and switches mesh namespaces to
-# the istio.io/dataplane-mode=ambient label.
-istio:
-  ambient:
-    enabled: true
