@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [10.3.2-bb.2] (2026-10-15)
+
+### Removed
+
+- Gluon Cypress UI test (test-cypress template, cypress specs/npm harness, `bbtests.cypress` values, and the cypress image). The script-based (`bbtests.scripts`) tests remain.
+
 ## [10.3.2-bb.1] (2026-10-08)
 
 ### Added

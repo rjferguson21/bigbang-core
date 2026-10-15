@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.44.0-bb.1] (2026-10-15)
+
+### Removed
+
+- Vestigial Cypress image from `helm.sh/images` (no Cypress test is defined in this chart).
+
 ## [1.44.0-bb.0] (2026-09-27)
 
 ### Added

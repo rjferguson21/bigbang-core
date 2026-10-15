@@ -36,7 +36,6 @@ components:
     images:
       - ghcr.io/rjferguson21/bigbang-operator:0.3.2
       - registry1.dso.mil/ironbank/big-bang/base:2.1.0
-      - registry1.dso.mil/ironbank/big-bang/cypress:16.1.0
       - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.0.1
       - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.2.1
       - registry1.dso.mil/ironbank/grafana/grafana-enterprise-logs:v3.6.5

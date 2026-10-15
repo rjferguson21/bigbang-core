@@ -1,6 +1,6 @@
 apiVersion: v2
 name: grafana
-version: 13.2.5-bb.0
+version: 13.2.5-bb.1
 appVersion: 13.2.1
 kubeVersion: "^1.25.0-0"
 description: The leading tool for querying and visualizing time series and metrics. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
@@ -28,9 +28,6 @@ annotations:
       image: registry1.dso.mil/ironbank/big-bang/base:2.1.0
     - name: image-renderer
       image: registry1.dso.mil/ironbank/opensource/grafana/grafana-image-renderer:v5.12.3
-    - name: cypress
-      image: registry1.dso.mil/ironbank/big-bang/cypress:16.1.0
-      condition: bbtests.enabled
 type: application
 dependencies:
   - name: gluon

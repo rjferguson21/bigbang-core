@@ -1,6 +1,6 @@
 apiVersion: v2
 name: gitlab
-version: 10.3.2-bb.1
+version: 10.3.2-bb.2
 appVersion: 19.3.2
 description: GitLab is the most comprehensive AI-powered DevSecOps Platform. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 keywords:
@@ -22,9 +22,6 @@ annotations:
   bigbang.dev/upstreamReleaseNotesMarkdown: |
     The [upstream chart's release notes](https://gitlab.com/gitlab-org/charts/gitlab/-/blob/master/CHANGELOG.md) may help when reviewing this package.
   helm.sh/images: |
-    - name: cypress
-      condition: bbtests.enabled
-      image: registry1.dso.mil/ironbank/big-bang/cypress:16.0.0
     - name: certificates
       image: registry1.dso.mil/gitlab/gitlab-org/build/cng/certificates:v19.3.2-ubi
     - name: cfssl-self-sign
