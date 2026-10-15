@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.44.0-bb.3] (2026-10-15)
+
+### Removed
+
+- Big Bang gluon API test + wait-job (templates/tests + tests/scripts) and the `gluon` chart dependency.
+
 ## [1.44.0-bb.2] (2026-10-15)
 
 ### Removed

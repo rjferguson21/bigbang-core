@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.30.4-bb.5] (2026-10-15)
+
+### Removed
+
+- Big Bang gluon proxy-convergence wait-job (templates/tests/test-wait-job.yaml + wait/wait.sh) and the `gluon` chart dependency. The gateway HelmRelease now reports Ready once its Deployment is Available.
+
 ## [1.30.4-bb.4] (2026-10-12)
 
 ### Fixed

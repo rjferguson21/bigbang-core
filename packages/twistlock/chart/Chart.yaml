@@ -1,12 +1,8 @@
 apiVersion: v2
 name: twistlock
-version: 0.30.0-bb.4
+version: 0.30.0-bb.5
 appVersion: 34.05.157
 description: Twistlock (Prisma Cloud Compute Edition) for Big Bang. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
-dependencies:
-  - name: gluon
-    version: 1.1.7
-    repository: oci://registry1.dso.mil/bigbang
 sources:
   - https://github.com/PaloAltoNetworks/pcs-metrics-monitoring
 annotations:

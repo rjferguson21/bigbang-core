@@ -1,12 +1,9 @@
 apiVersion: v2
 name: elasticsearch-kibana
 description: Configurable Deployment of Elasticsearch and Kibana Custom Resources Wrapped Inside a Helm Chart. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
-version: 1.44.0-bb.2
+version: 1.44.0-bb.3
 appVersion: 9.5.4
 dependencies:
-  - name: gluon
-    version: 1.1.8
-    repository: oci://registry1.dso.mil/bigbang
   - name: prometheus-elasticsearch-exporter
     repository: https://prometheus-community.github.io/helm-charts
     version: 7.4.0

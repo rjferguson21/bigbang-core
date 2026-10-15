@@ -1,7 +1,7 @@
 apiVersion: v2
 name: kiali
 description: Kiali is an open source project for service mesh observability, refer to https://www.kiali.io for details. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
-version: 2.32.0-bb.1
+version: 2.32.0-bb.2
 appVersion: 2.32.0
 home: https://github.com/kiali/kiali-operator
 maintainers:
@@ -18,9 +18,6 @@ sources:
   - https://github.com/kiali/helm-charts
 icon: https://raw.githubusercontent.com/kiali/kiali.io/current/assets/icons/logo.svg
 dependencies:
-  - name: gluon
-    version: "1.1.8"
-    repository: "oci://registry1.dso.mil/bigbang"
   - name: kiali-operator
     version: "2.32.0"
     repository: "https://kiali.org/helm-charts/"

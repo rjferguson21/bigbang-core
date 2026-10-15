@@ -385,7 +385,7 @@ upstream:
     serviceAccount:
       automount: false
     # The upstream Helm test uses an unqualified BusyBox image and does not
-    # support imagePullSecrets. Big Bang uses Gluon tests instead.
+    # support imagePullSecrets, so it is disabled.
     test:
       enabled: false
       image: registry1.dso.mil/ironbank/afdco/docker/busybox:1.37.0

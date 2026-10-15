@@ -3,7 +3,7 @@ name: loki
 description: Helm chart for Grafana Loki wrapping the upstream chart. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 type: application
 appVersion: 3.7.1
-version: 6.55.0-bb.3
+version: 6.55.0-bb.4
 home: https://grafana.github.io/helm-charts
 sources:
   - https://github.com/grafana/loki
@@ -15,9 +15,6 @@ dependencies:
     version: "6.55.0"
     repository: https://grafana.github.io/helm-charts
     alias: upstream
-  - name: gluon
-    version: 0.9.8
-    repository: "oci://registry1.dso.mil/bigbang"
 annotations:
   bigbang.dev/maintenanceTrack: bb_integrated
   bigbang.dev/applicationVersions: |

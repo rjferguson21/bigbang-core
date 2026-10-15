@@ -5,7 +5,7 @@ keywords:
   - logging
   - fluent-bit
   - fluentd
-version: 0.57.9-bb.1
+version: 0.57.9-bb.2
 appVersion: v5.0.9
 icon: https://raw.githubusercontent.com/cncf/artwork/master/projects/fluentd/fluentbit/icon/fluentbit-icon-color.svg
 home: https://fluentbit.io/
@@ -24,9 +24,6 @@ annotations:
     - name: configmap-reload
       image: registry1.dso.mil/ironbank/opensource/jimmidyson/configmap-reload:v0.15.0
 dependencies:
-  - name: gluon
-    version: 1.1.2
-    repository: oci://registry1.dso.mil/bigbang
   - name: fluent-bit
     version: 0.57.9
     repository: https://fluent.github.io/helm-charts

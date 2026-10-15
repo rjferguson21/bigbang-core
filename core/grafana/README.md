@@ -4,7 +4,7 @@ Big Bang wrapper chart for the upstream [grafana](https://github.com/grafana-com
 
 ## How it works
 
-- The upstream `grafana` chart is a dependency under the `upstream` alias, with `gluon` for the Big Bang test hooks (same as repo1).
+- The upstream `grafana` chart is a dependency under the `upstream` alias.
 - `chart/templates/bigbang/package.yaml` renders the `Package` CR from `bigbangPackage.istio`, `bigbangPackage.networkPolicies`, and `bigbangPackage.routes` — the same value shapes bb-common uses, nested under `bigbangPackage`. Values are passed through `tpl`, so templated values like `grafana.{{ .Values.domain }}` work.
 - The grafana route includes custom HTTP routing on the public ingressgateway that redirects `/metrics` to `/`; the operator renders the matching VirtualService.
 - The SSO ServiceEntry (`ssoServiceEntry.yaml`) stays a chart template and now reads from the `bigbangPackage.istio` tree, which is why `bigbangPackage.istio.sidecar` remains in values.

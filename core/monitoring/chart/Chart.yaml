@@ -6,7 +6,7 @@ name: monitoring
 sources:
   - https://github.com/prometheus-community/helm-charts
   - https://github.com/prometheus-operator/kube-prometheus
-version: 87.10.1-bb.3
+version: 87.10.1-bb.4
 # Please do not add a renovate hint here, since appVersion updates involves manual tasks
 appVersion: v0.92.1
 kubeVersion: ">=1.19.0-0"
@@ -121,6 +121,3 @@ dependencies:
     version: "11.15.1"
     condition: blackboxExporter.enabled
     alias: blackboxExporter
-  - name: gluon
-    version: "1.1.2"
-    repository: oci://registry1.dso.mil/bigbang

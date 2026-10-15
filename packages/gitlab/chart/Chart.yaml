@@ -1,6 +1,6 @@
 apiVersion: v2
 name: gitlab
-version: 10.3.2-bb.3
+version: 10.3.2-bb.4
 appVersion: 19.3.2
 description: GitLab is the most comprehensive AI-powered DevSecOps Platform. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 keywords:
@@ -14,9 +14,6 @@ dependencies:
   version: 10.3.2
   repository: https://charts.gitlab.io
   alias: upstream
-- name: gluon
-  version: "1.1.7"
-  repository: "oci://registry1.dso.mil/bigbang"
 annotations:
   bigbang.dev/maintenanceTrack: bb_integrated
   bigbang.dev/upstreamReleaseNotesMarkdown: |

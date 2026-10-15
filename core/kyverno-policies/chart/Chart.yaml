@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kyverno-policies
-version: 3.3.4-bb.64
+version: 3.3.4-bb.65
 appVersion: v1.13.2
 icon: https://github.com/kyverno/kyverno/raw/main/img/logo.png
 description: Collection of Kyverno security and best-practice policies for Kyverno. This variant bakes the Big Bang umbrella's policy defaults for the core stack into the chart values.
@@ -12,10 +12,6 @@ keywords:
 home: https://kyverno.io/policies/
 sources:
   - https://github.com/kyverno/policies
-dependencies:
-  - name: gluon
-    version: 1.0.1
-    repository: oci://registry1.dso.mil/bigbang
 annotations:
   bigbang.dev/maintenanceTrack: bb_integrated
   bigbang.dev/applicationVersions: |

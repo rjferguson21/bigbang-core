@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.8.13-bb.3] (2026-10-15)
+
+### Removed
+
+- Unused `gluon` chart dependency (the only helm test, test-updater, does not use gluon).
+
 ## [2.8.13-bb.2] (2026-10-15)
 
 ### Removed
