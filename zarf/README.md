@@ -1,14 +1,14 @@
 # Airgap (Zarf) — prototype
 
 A [Zarf](https://zarf.dev) package that installs the **full bigbang-core default
-stack** (operator, CRDs, Istio, Kyverno + policies + reporter, monitoring, Loki,
-Grafana, Alloy) into an airgapped cluster. Zarf mirrors this repo into the
-in-cluster git and the core images into the in-cluster registry, and its
-admission agent rewrites the Flux `GitRepository` and pod image references
-automatically — so no manual hub-rewrite overlay is needed.
+stack** (operator, CRDs, Istio with ambient mesh, Kyverno + policies + reporter,
+monitoring, Loki, Grafana, Alloy) into an airgapped cluster. Zarf mirrors this
+repo into the in-cluster git and the core images into the in-cluster registry,
+and its admission agent rewrites the Flux `GitRepository` and pod image
+references automatically — so no manual hub-rewrite overlay is needed.
 
-Ambient-only packages (istio-cni, ztunnel) are omitted; add their images to
-`zarf.yaml` and set `profile: ambient` to deploy the ambient variant.
+Ambient is the default mesh mode, so the istio-cni and ztunnel images are
+included in the package.
 
 Two integration points the agent does **not** cover, handled here:
 - **Pull secret.** The agent injects `imagePullSecrets: private-registry` into
@@ -58,21 +58,22 @@ agent repoints the GitRepository to gitea and rewrites pod images to the
 in-cluster registry.
 
 ## Image list
-`zarf.yaml`'s `images:` is the full non-ambient set, enumerated from each chart's
-`helm.sh/images` annotation:
+`zarf.yaml`'s `images:` is the full default-stack set, enumerated from each
+chart's `helm.sh/images` annotation:
 ```bash
-for p in istiod istio-gateway kyverno kyverno-policies kyverno-reporter \
-         monitoring loki grafana alloy; do
+for p in istio-cni ztunnel istiod istio-gateway kyverno kyverno-policies \
+         kyverno-reporter monitoring loki grafana alloy; do
   yq '.annotations."helm.sh/images"' "core/$p/chart/Chart.yaml"
 done | grep 'image:' | sed 's/.*image: //' | sort -u
 ```
 (plus the operator image `ghcr.io/rjferguson21/bigbang-operator`). Re-run and
 diff after a package/image bump to keep the list in sync.
 
-## Profiles
-- **Minimal** (operator + CRDs + Istio only): set `profile: minimal` in
-  `manifests/core-values.yaml` and trim `images:` to the istio + operator + kubectl set.
-- **Ambient**: set `profile: ambient` and add the istio-cni/ztunnel images.
+## Minimal variant
+For just the operator + CRDs + Istio (no policy/observability packages), set
+`profile: minimal` in `manifests/core-values.yaml`. Ambient is still the mesh
+mode, so keep the istio-cni/ztunnel images; you can trim the kyverno, monitoring,
+loki, grafana and alloy images from `images:`.
 
 ## Notes / not yet done
 - **Deploy-tested locally** against a `zarf init`-ed k3d cluster — not yet

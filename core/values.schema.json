@@ -35,7 +35,7 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "Enable ambient mesh: deploy istio-cni + ztunnel, run istiod with ambient/HBONE, set istio.ambient.enabled on every Package CR, and label mesh namespaces istio.io/dataplane-mode=ambient."
+              "description": "Ambient mesh mode (default true): deploy istio-cni + ztunnel, run istiod with ambient/HBONE, set istio.ambient.enabled on every Package CR, and label mesh namespaces istio.io/dataplane-mode=ambient. Set false for sidecar mode."
             }
           }
         }

@@ -413,30 +413,19 @@ tasks:
       - npx playwright test {{.SPEC}}
 
   ci:
-    desc: "CI profile (.github/workflows/ci.yaml): recreate the cluster without registry1 creds (bb-k3d public images), deploy core-minimal with upstream images from the local gitea, then kiali. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
+    desc: "CI (.github/workflows/ci.yaml): recreate the cluster (bb-k3d public images), deploy core-minimal with upstream images from the local gitea (ambient is the default mesh mode), assert istio-cni/ztunnel + ambient enrollment, then deploy kiali as the smoke-test workload. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
     cmds:
       - task: cluster:recreate
         vars: { UPSTREAM_IMAGES: "true" }
       - task: core:deploy
         vars: { CORE_VALUES: "dev/values/upstream-images.yaml", PROFILE: "minimal" }
-      - task: package:deploy
-        vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
-      - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
-      - task: status
-
-  ci:ambient:
-    desc: "CI ambient profile: recreate the cluster (bb-k3d public images), deploy core-minimal with ambient mode enabled, assert istio-cni/ztunnel + ambient enrollment, then deploy kiali as the smoke-test workload. Run the kiali spec after with: task playwright:test SPEC=tests/kiali.spec.ts"
-    cmds:
-      - task: cluster:recreate
-        vars: { UPSTREAM_IMAGES: "true" }
-      - task: core:deploy
-        vars: { CORE_VALUES: "dev/values/core-minimal.yaml,dev/values/upstream-images.yaml", PROFILE: "ambient" }
-      # The ambient data plane must be running on every node.
+      # Ambient is the default mesh mode, so the data plane must be running on
+      # every node.
       - kubectl --context {{.CTX}} -n istio-system rollout status ds/istio-cni-node --timeout=180s
       - kubectl --context {{.CTX}} -n istio-system rollout status ds/ztunnel --timeout=180s
       # Sanity-check ambient capture: a pod in an ambient-labeled namespace must
       # get the ambient.istio.io/redirection annotation from istio-cni (kyverno
-      # is off in core-minimal, so no PolicyException is needed).
+      # is off in the minimal profile, so no PolicyException is needed).
       - |
         set -eo pipefail
         kubectl --context {{.CTX}} create namespace ambient-test --dry-run=client -o yaml | kubectl --context {{.CTX}} apply -f -

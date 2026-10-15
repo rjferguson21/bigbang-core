@@ -28,12 +28,14 @@ merges them over your values (the profile wins on the keys it sets; keys it
 doesn't touch stay customizable):
 
 - `minimal` — only the operator, the CRD charts and Istio, for testing one package at a time.
-- `ambient` — enable Istio ambient mesh mode.
 
 ```bash
 task core:up PROFILE=minimal
-task core:up PROFILE=ambient
 ```
+
+Istio **ambient** is the default mesh mode (`istio.ambient.enabled: true`), so it
+isn't a profile — it's always on unless you set `istio.ambient.enabled=false` for
+sidecar mode. See [architecture.md](architecture.md#ambient-mode).
 
 ## Package groups
 
@@ -66,7 +68,6 @@ comma-separated list merged in order (composable with `PROFILE=`):
   core-minimal set plus the ambient data plane (istio-cni, ztunnel); Istio
   pulls from `mirror.gcr.io/istio`, Google's public cache of Docker Hub,
   which avoids Docker Hub's anonymous pull limits.
-- `dev/values/ambient.yaml`: enable Istio ambient mesh mode.
 
 ```bash
 task core:deploy CORE_VALUES=dev/values/core-minimal.yaml

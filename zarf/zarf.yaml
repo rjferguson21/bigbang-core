@@ -29,10 +29,10 @@ components:
         files:
           - manifests/core-values.yaml
           - manifests/bigbang-core.yaml
-    # Every image the full non-ambient stack pulls, from each chart's
-    # helm.sh/images annotation (istio-cni/ztunnel are ambient-only and omitted).
-    # The zarf-agent rewrites these refs on the running pods to the in-cluster
-    # registry. For the ambient profile, add the istio-cni/ztunnel images.
+    # Every image the full stack pulls, from each chart's helm.sh/images
+    # annotation. Ambient is the default mesh mode, so istio-cni + ztunnel are
+    # included. The zarf-agent rewrites these refs on the running pods to the
+    # in-cluster registry.
     images:
       - ghcr.io/rjferguson21/bigbang-operator:0.3.2
       - registry1.dso.mil/ironbank/big-bang/base:2.1.0
@@ -51,8 +51,10 @@ components:
       - registry1.dso.mil/ironbank/opensource/grafana/helm-chart-toolbox-kubectl:1.0
       - registry1.dso.mil/ironbank/opensource/grafana/loki:3.7.1
       - registry1.dso.mil/ironbank/opensource/ingress-nginx/kube-webhook-certgen:v1.6.9
+      - registry1.dso.mil/ironbank/opensource/istio/install-cni:1.30.4
       - registry1.dso.mil/ironbank/opensource/istio/pilot:1.30.4
       - registry1.dso.mil/ironbank/opensource/istio/proxyv2:1.30.4
+      - registry1.dso.mil/ironbank/opensource/istio/ztunnel:1.30.4
       - registry1.dso.mil/ironbank/opensource/kubernetes/kube-state-metrics:v2.19.1
       - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.34
       - registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.34.6
