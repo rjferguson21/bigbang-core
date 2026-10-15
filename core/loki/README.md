@@ -11,7 +11,7 @@ Unlike this package, the repo1 loki chart is a full fork of the upstream chart. 
 ## How it works
 
 - `chart/templates/bigbang/package.yaml` renders the `Package` CR from `bigbangPackage.istio`, `bigbangPackage.networkPolicies`, and `bigbangPackage.routes` — the same value shapes bb-common uses. Values are passed through `tpl`, so templated values like `loki.{{ .Values.domain }}` work.
-- Kept from the fork as parent-chart templates: the Big Bang Grafana dashboards (`monitoring.enabled`, with `src/dashboards/`), the OpenShift SCC binding, the HA replica validation (`experimentalMode`), and the gluon script tests. UI tests live in the shared [tests](../tests/) suite.
+- Kept from the fork as parent-chart templates: the Big Bang Grafana dashboards (`monitoring.enabled`, with `src/dashboards/`), the HA replica validation (`experimentalMode`), and the gluon script tests. UI tests live in the shared [tests](../tests/) suite.
 
 ## Prerequisites
 

@@ -322,7 +322,7 @@ console:
       deniedGroups: []
   serviceAccount:
     # -- Auto-mount the API token on the console ServiceAccount. Default false: the
-    # console SA exists only for OpenShift SCC and needs no token. Kyverno
+    # console SA needs no token. Kyverno
     # disallow-auto-mount-service-account-token compliance.
     automountServiceAccountToken: false
 # -- Deployment mode configuration
@@ -532,8 +532,6 @@ resources:
   requests:
     memory: 3Gi
     cpu: 250m
-# -- Toggle to setup special configuration for OpenShift clusters
-openshift: false
 bbtests:
   # -- Toggle bbtests on/off for CI/Dev
   enabled: false

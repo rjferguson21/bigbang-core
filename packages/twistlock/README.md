@@ -6,7 +6,7 @@ Big Bang twistlock (Prisma Cloud Compute Edition) chart, structured like the [re
 
 - Twistlock is a Big Bang-native chart (no upstream alias): the console, defender daemonset, and init job templates are unchanged from repo1.
 - `chart/templates/bigbang/package.yaml` renders the `Package` CR from `bigbangPackage.istio`, `bigbangPackage.networkPolicies`, and `bigbangPackage.routes` — the same value shapes bb-common uses, nested under `bigbangPackage`. Values are passed through `tpl`, so templated values like `twistlock.{{ .Values.domain }}` work.
-- The console/defender PeerAuthentications, init secrets, and openshift NetworkAttachmentDefinition stay chart templates and now read from the `bigbangPackage` tree (`bigbangPackage.istio.enabled`, `.mtls.mode`, `.ambient.enabled`, `bigbangPackage.routes.inbound.console.hosts`).
+- The console/defender PeerAuthentications and init secrets stay chart templates and now read from the `bigbangPackage` tree (`bigbangPackage.istio.enabled`, `.mtls.mode`, `.ambient.enabled`, `bigbangPackage.routes.inbound.console.hosts`).
 - `chart/templates/bigbang/policy-exception.yaml` renders a kyverno `PolicyException` for the twistlock pods (`twistlock-console*`, `twistlock-defender-ds*`, `volume-upgrade*`) — defenders need host access and elevated privileges to scan nodes, the same carve-out the Big Bang umbrella makes for twistlock.
 
 ## Prerequisites

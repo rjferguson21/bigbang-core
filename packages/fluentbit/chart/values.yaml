@@ -222,9 +222,6 @@ additionalOutputs:
 # storage_buffer:
 #   path: /var/log/flb-storage/
 
-# -- Toggle for Openshift, currently only controls NetworkPolicy changes
-openshift: false
-
 # -- List of enabled Big Bang log storage package(s), used to control networkPolicies and auth only
 elasticsearchKibana:
   enabled: false

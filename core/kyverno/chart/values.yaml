@@ -74,7 +74,6 @@ bigbangPackage:
             definition:
               kubeAPI: true
 
-openshift: false
 bbtests:
   enabled: false
   scripts:

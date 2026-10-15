@@ -7,7 +7,6 @@ Big Bang wrapper chart for the upstream [kyverno](https://github.com/kyverno/kyv
 - The upstream `kyverno` chart is a dependency under the `upstream` alias (same as repo1).
 - `chart/templates/bigbang/package.yaml` renders the `Package` CR from `bigbangPackage.istio` and `bigbangPackage.networkPolicies` — the same value shapes bb-common uses, nested under `bigbangPackage`. Values are passed through `tpl`, so templated values work.
 - Kyverno is not in the service mesh, so the `allowIstiod` and `allowPrometheusToIstioSidecar` netpol defaults are disabled and there are no routes.
-- The OpenShift extras (`network-attachment-definition.yaml`, `kyverno-clusterrolebinding-openshift-scc.yaml`) stay chart templates; the NetworkAttachmentDefinition now reads `bigbangPackage.istio.enabled`.
 
 ## Prerequisites
 

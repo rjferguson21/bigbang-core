@@ -14,7 +14,6 @@ global:
   #   - pullSecret1
   #   - pullSecret2
   imagePullSecrets: []
-openshift: false
 # -- Toggle creation of Enterprise License Secret
 # See https://docs-bigbang.dso.mil/latest/packages/grafana/docs/enterprise
 enterprise:
