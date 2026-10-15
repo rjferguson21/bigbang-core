@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.4] (2026-10-15)
+
+### Removed
+
+- Unused `gluon` chart dependency (no gluon test templates are present in this chart).
+
 ## [87.10.1-bb.3] (2026-10-15)
 
 ### Removed

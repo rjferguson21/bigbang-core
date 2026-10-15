@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [6.55.0-bb.4] (2026-10-15)
+
+### Removed
+
+- Big Bang gluon script-test (templates/tests + tests/scripts) and the `gluon` chart dependency.
+
 ## [6.55.0-bb.3] (2026-10-15)
 
 ### Removed

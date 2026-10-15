@@ -1,6 +1,5 @@
 # No Package CR here: the chart deploys only ClusterPolicies and hook jobs —
-# no services, no mesh presence — and gluon's hook-scoped NetworkPolicy grants
-# the wait job egress under the kyverno package's default-deny.
+# no services, no mesh presence.
 
 # Overrides for all policies.  Blank values indicate to use the policy-specific value or the default value
 
@@ -1178,7 +1177,7 @@ bbtests:
     envs:
       # Feeds 05_test-cpols.sh — the test pod needs the enabled set at runtime
       ENABLED_CPOLS: '{{ $p := list }}{{ range $k, $v := .Values.policies }}{{ if $v.enabled }}{{ $p = append $p $k }}{{ end }}{{ end }}{{ join " " $p }}'
-      # Feeds 00_reset-cpols.sh — heals stale validationFailureAction between gluon re-runs.
+      # Feeds 00_reset-cpols.sh — heals stale validationFailureAction between test re-runs.
       # Precedence: global validationFailureAction wins over per-policy, matching the CPol
       # templates (default returns its second arg when non-empty, first arg is fallback).
       CPOL_ACTIONS: '{{ $pairs := list }}{{ range $k, $v := .Values.policies }}{{ if $v.enabled }}{{ $action := default (dig $k "validationFailureAction" "Audit" $.Values.policies) $.Values.validationFailureAction }}{{ $pairs = append $pairs (printf "%s=%s" $k $action) }}{{ end }}{{ end }}{{ join " " $pairs }}'
