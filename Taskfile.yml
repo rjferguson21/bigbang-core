@@ -445,5 +445,13 @@ tasks:
       # exercises it through the gateway (run from the workflow after this task).
       - task: package:deploy
         vars: { PKG: kiali, RELEASE: kiali, NS: kiali, UPSTREAM_IMAGES: "true" }
-      - kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
+      # The Package CR is reconciled by the operator, so the kiali Deployment is
+      # created asynchronously after helm install returns — wait for it to exist
+      # before checking rollout (don't rely on a package's post-install hook).
+      - |
+        for i in $(seq 1 60); do
+          kubectl --context {{.CTX}} -n kiali get deploy/kiali >/dev/null 2>&1 && break
+          sleep 5
+        done
+        kubectl --context {{.CTX}} -n kiali rollout status deploy/kiali --timeout=300s
       - task: status
