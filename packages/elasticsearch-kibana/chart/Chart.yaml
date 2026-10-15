@@ -1,7 +1,7 @@
 apiVersion: v2
 name: elasticsearch-kibana
 description: Configurable Deployment of Elasticsearch and Kibana Custom Resources Wrapped Inside a Helm Chart. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
-version: 1.44.0-bb.0
+version: 1.44.0-bb.1
 appVersion: 9.5.4
 dependencies:
   - name: gluon
@@ -36,6 +36,3 @@ annotations:
       image: registry1.dso.mil/ironbank/opensource/elasticsearch-exporter:v1.11.0
     - name: kubectl
       image: registry1.dso.mil/ironbank/opensource/kubernetes/kubectl:v1.37
-    - name: cypress
-      condition: bbtests.enabled
-      image: registry1.dso.mil/ironbank/big-bang/cypress:15.21.1
