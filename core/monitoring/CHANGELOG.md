@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.5] (2026-10-15)
+
+### Added
+
+- Hook NetworkPolicy allowing the admission-webhook patch Jobs egress to the kube API. In ambient mode ztunnel enforces NetworkPolicy and the namespace default-deny blocked the hook pods, crashlooping the create Job so the release never went Ready. Systemic fix tracked in bigbang-operator#12.
+
 ## [87.10.1-bb.4] (2026-10-15)
 
 ### Removed
