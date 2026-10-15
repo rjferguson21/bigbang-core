@@ -61,16 +61,17 @@ Groups are the primitive profiles build on: the `minimal` profile is just
 Ad-hoc overlays for the core chart go in `CORE_VALUES`, one file or a
 comma-separated list merged in order (composable with `PROFILE=`):
 
-- `dev/values/core-minimal.yaml`: only the operator, the CRD charts and
-  Istio, for testing one package at a time.
 - `dev/values/upstream-images.yaml`: public images instead of Iron Bank
-  ones, for clusters without registry1 credentials. It covers the
-  core-minimal set plus the ambient data plane (istio-cni, ztunnel); Istio
+  ones, for clusters without registry1 credentials. It covers the `minimal`
+  profile's set plus the ambient data plane (istio-cni, ztunnel); Istio
   pulls from `mirror.gcr.io/istio`, Google's public cache of Docker Hub,
   which avoids Docker Hub's anonymous pull limits.
 
+For a cut-down stack (just the operator, the CRD charts and Istio, for testing
+one package at a time) use the `minimal` profile:
+
 ```bash
-task core:deploy CORE_VALUES=dev/values/core-minimal.yaml
+task core:deploy PROFILE=minimal
 task package:deploy PKG=<name> RELEASE=<release> NS=<ns>
 ```
 

@@ -19,10 +19,10 @@
 ```
 core/              # Flux parent chart + the core packages (operator, Istio, Kyverno, observability)
 packages/          # app packages (keycloak, gitlab, kiali, logging, security tools, …)
-dev/values/        # overlays for the dev/CI clusters (core-minimal, upstream-images, per-package tweaks)
+dev/values/        # overlays for the dev/CI clusters (upstream-images, per-package tweaks)
 tests/             # shared end-to-end suite, run against a deployed cluster
 Taskfile.yml       # dev harness: k3d cluster, core via Flux, packages via helm
-.github/workflows/ # CI: k3d cluster + core-minimal on upstream images
+.github/workflows/ # CI: k3d cluster + minimal profile on upstream images
 deps.md            # the umbrella's HelmRelease dependency graph, for reference
 ```
 

@@ -839,31 +839,6 @@ bbtests:
   # configuration supplied by tests/test-values*.yaml are unsupported for
   # consumer deployments.
   enabled: false
-  cypress:
-    resources:
-      requests:
-        cpu: 1
-        memory: "2Gi"
-      limits:
-        cpu: 1
-        memory: "2Gi"
-    artifacts: true
-    envs:
-      cypress_url: http://gitlab-webservice-default:8181
-      cypress_gitlab_first_name: "test"
-      cypress_gitlab_last_name: "user"
-      cypress_gitlab_username: "testuser"
-      cypress_gitlab_password: "Password123h56a78"
-      cypress_gitlab_email: "testuser@example.com"
-      cypress_gitlab_project: "my-awesome-project"
-      cypress_keycloak_username: "cypress"
-      cypress_keycloak_password: "tnr_w!G33ZyAt@C8"
-    secretEnvs:
-    - name: cypress_adminpassword
-      valueFrom:
-        secretKeyRef:
-          name: gitlab-gitlab-initial-root-password
-          key: password
   scripts:
     image: "registry1.dso.mil/ironbank/big-bang/devops-tester:1.3"
     additionalVolumes:
