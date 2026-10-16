@@ -1,9 +1,9 @@
 <!-- Warning: Do not manually edit this file. See notes on gluon + helm-docs at the end of this file for more information. -->
 # gitlab
 
-![Version: 10.3.2-bb.1](https://img.shields.io/badge/Version-10.3.2--bb.1-informational?style=flat-square) ![AppVersion: 19.3.2](https://img.shields.io/badge/AppVersion-19.3.2-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
+![Version: 10.3.2-bb.4](https://img.shields.io/badge/Version-10.3.2--bb.4-informational?style=flat-square) ![AppVersion: 19.3.2](https://img.shields.io/badge/AppVersion-19.3.2-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
 
-GitLab is the most comprehensive AI-powered DevSecOps Platform.
+GitLab is the most comprehensive AI-powered DevSecOps Platform. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 
 ## Upstream References
 
@@ -42,9 +42,72 @@ helm install gitlab chart/
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| networkPolicies | object | Basic configuration necessary for gitlab to function standalone. | Network Policy configuration; see bb-common network policy docs for details: https://repo1.dso.mil/big-bang/product/packages/bb-common/-/tree/main/docs/network-policies?ref_type=heads |
-| istio | object | Istio disabled | Istio configuration; see bb-common istio docs for details: https://repo1.dso.mil/big-bang/product/packages/bb-common/-/tree/main/docs/istio?ref_type=heads |
-| routes | object | Basic outbound routes for gitlab functionality | Routes configuration; see bb-common routes docs for details: https://repo1.dso.mil/big-bang/product/packages/bb-common/-/tree/main/docs/routes?ref_type=heads |
+| bigbangPackage.enabled | bool | `true` |  |
+| bigbangPackage.labels | object | `{}` |  |
+| bigbangPackage.annotations | object | `{}` |  |
+| bigbangPackage.istio.enabled | bool | `false` |  |
+| bigbangPackage.istio.authorizationPolicies.enabled | bool | `true` |  |
+| bigbangPackage.istio.authorizationPolicies.generateFromNetpol | bool | `true` |  |
+| bigbangPackage.routes.inbound.gitlab.enabled | bool | `true` |  |
+| bigbangPackage.routes.inbound.gitlab.gateways[0] | string | `"istio-gateway/public-ingressgateway"` |  |
+| bigbangPackage.routes.inbound.gitlab.hosts[0] | string | `"gitlab.{{ .Values.domain }}"` |  |
+| bigbangPackage.routes.inbound.gitlab.service | string | `"gitlab-webservice-default"` |  |
+| bigbangPackage.routes.inbound.gitlab.port | int | `8181` |  |
+| bigbangPackage.routes.inbound.gitlab.http[0].fault.abort.httpStatus | int | `403` |  |
+| bigbangPackage.routes.inbound.gitlab.http[0].fault.abort.percentage.value | int | `100` |  |
+| bigbangPackage.routes.inbound.gitlab.http[0].match[0].uri.prefix | string | `"/-/metrics"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[0].route[0].destination.host | string | `"gitlab-webservice-default"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[0].route[0].destination.port.number | int | `8181` |  |
+| bigbangPackage.routes.inbound.gitlab.http[1].match[0].uri.prefix | string | `"/"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[1].route[0].destination.host | string | `"gitlab-webservice-default"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[1].route[0].destination.port.number | int | `8181` |  |
+| bigbangPackage.routes.inbound.gitlab.http[2].match[0].uri.prefix | string | `"/admin/sidekiq"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[2].route[0].destination.host | string | `"gitlab-webservice-default"` |  |
+| bigbangPackage.routes.inbound.gitlab.http[2].route[0].destination.port.number | int | `8080` |  |
+| bigbangPackage.routes.inbound.gitlab.selector.app | string | `"webservice"` |  |
+| bigbangPackage.routes.inbound.registry.enabled | bool | `false` |  |
+| bigbangPackage.routes.inbound.registry.gateways[0] | string | `"istio-gateway/public-ingressgateway"` |  |
+| bigbangPackage.routes.inbound.registry.hosts[0] | string | `"registry.{{ .Values.domain }}"` |  |
+| bigbangPackage.routes.inbound.registry.service | string | `"gitlab-registry"` |  |
+| bigbangPackage.routes.inbound.registry.port | int | `5000` |  |
+| bigbangPackage.routes.inbound.registry.selector.app | string | `"registry"` |  |
+| bigbangPackage.routes.outbound.gitlab.enabled | bool | `true` |  |
+| bigbangPackage.routes.outbound.gitlab.hosts[0] | string | `"gitlab.com"` |  |
+| bigbangPackage.routes.outbound.gitlab.hosts[1] | string | `"version.gitlab.com"` |  |
+| bigbangPackage.routes.outbound.gravatar.enabled | bool | `true` |  |
+| bigbangPackage.routes.outbound.gravatar.hosts[0] | string | `"secure.gravatar.com"` |  |
+| bigbangPackage.networkPolicies.enabled | bool | `false` |  |
+| bigbangPackage.networkPolicies.ingress.to.redis:9121.from.k8s.monitoring-monitoring-kube-prometheus@monitoring/prometheus | bool | `true` |  |
+| bigbangPackage.networkPolicies.ingress.to.gitlab-exporter:9168.podSelector.matchLabels.app | string | `"gitlab-exporter"` |  |
+| bigbangPackage.networkPolicies.ingress.to.gitlab-exporter:9168.from.k8s.monitoring-monitoring-kube-prometheus@monitoring/prometheus | bool | `true` |  |
+| bigbangPackage.networkPolicies.ingress.to.gitaly:9236.podSelector.matchLabels.app | string | `"gitaly"` |  |
+| bigbangPackage.networkPolicies.ingress.to.gitaly:9236.from.k8s.monitoring-monitoring-kube-prometheus@monitoring/prometheus | bool | `true` |  |
+| bigbangPackage.networkPolicies.ingress.to.webservice:[8083,8084,9229].podSelector.matchLabels.app | string | `"webservice"` |  |
+| bigbangPackage.networkPolicies.ingress.to.webservice:[8083,8084,9229].from.k8s.monitoring-monitoring-kube-prometheus@monitoring/prometheus | bool | `true` |  |
+| bigbangPackage.networkPolicies.ingress.to.registry:5001.podSelector.matchLabels.app | string | `"registry"` |  |
+| bigbangPackage.networkPolicies.ingress.to.registry:5001.from.k8s.monitoring-monitoring-kube-prometheus@monitoring/prometheus | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.*.to.definition.kubeAPI | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.webservice.podSelector.matchLabels.app | string | `"webservice"` |  |
+| bigbangPackage.networkPolicies.egress.from.webservice.to.definition.sso | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.webservice.to.definition.database-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.webservice.to.definition.redis-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.webservice.to.definition.storage-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.sidekiq.podSelector.matchLabels.app | string | `"sidekiq"` |  |
+| bigbangPackage.networkPolicies.egress.from.sidekiq.to.definition.database-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.sidekiq.to.definition.redis-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.sidekiq.to.definition.storage-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.migrations.podSelector.matchLabels.app | string | `"migrations"` |  |
+| bigbangPackage.networkPolicies.egress.from.migrations.to.definition.database-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.migrations.to.definition.redis-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.toolbox.podSelector.matchLabels.app | string | `"toolbox"` |  |
+| bigbangPackage.networkPolicies.egress.from.toolbox.to.definition.database-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.toolbox.to.definition.redis-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.toolbox.to.definition.storage-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.gitlab-exporter.podSelector.matchLabels.app | string | `"gitlab-exporter"` |  |
+| bigbangPackage.networkPolicies.egress.from.gitlab-exporter.to.definition.database-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.gitlab-exporter.to.definition.redis-subnets | bool | `true` |  |
+| bigbangPackage.networkPolicies.egress.from.registry.podSelector.matchLabels.app | string | `"registry"` |  |
+| bigbangPackage.networkPolicies.egress.from.registry.to.definition.storage-subnets | bool | `true` |  |
 | global.image.pullSecrets[0].name | string | `"private-registry"` |  |
 | global.imagePullSecrets[0].name | string | `"private-registry"` |  |
 | global.hosts.domain | string | `"dev.bigbang.mil"` |  |
@@ -348,4 +411,3 @@ Please see the [contributing guide](./CONTRIBUTING.md) if you are interested in 
 ---
 
 _This file is programatically generated using `helm-docs` and some BigBang-specific templates. The `gluon` repository has [instructions for regenerating package READMEs](https://repo1.dso.mil/big-bang/product/packages/gluon/-/blob/master/docs/bb-package-readme.md)._
-

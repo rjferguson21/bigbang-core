@@ -378,6 +378,53 @@ tasks:
       - kubectl --context {{.CTX}} get packages -A
       - kubectl --context {{.CTX}} get pods -A --no-headers | grep -vE "Running|Completed" || echo "all pods running"
 
+  readme:
+    desc: >-
+      Regenerate the helm-docs-managed READMEs (those marked "Do not manually edit"), writing each to
+      its package dir. Hand-curated READMEs are left untouched. Use this instead of the shared taskfiles
+      util:readme, which clobbers the repo-root README and bloats core/README.md by recursing into subcharts.
+    vars:
+      GLUON: https://repo1.dso.mil/big-bang/product/packages/gluon/-/raw/master/docs
+      HELM_DOCS: jnorwood/helm-docs:v1.14.2
+    cmds:
+      - |
+        set -eo pipefail
+        root="$(pwd)"
+        # Not named .helmdocsignore on purpose: helm-docs auto-loads a file by that
+        # name for every run, which would exclude the per-package charts too. We pass
+        # this one explicitly, only for the umbrella.
+        ignore=".readme-core-ignore"
+        trap 'rm -f "$root/README.md.gotmpl" "$root/_templates.gotmpl" "$root/$ignore"' EXIT
+        for f in README.md.gotmpl _templates.gotmpl; do
+          curl -fsSL -o "$root/$f" "{{.GLUON}}/$f"
+        done
+        # Ignore core's subcharts so the umbrella README documents only core/values.yaml.
+        : > "$root/$ignore"
+        for d in core/*/chart; do echo "$(basename "$(dirname "$d")")/" >> "$root/$ignore"; done
+        regen() { # <chart-search-root> <output README> [ignore-file]
+          tmp="$(mktemp)"
+          docker run --rm -v "$root:/helm-docs" -u "$(id -u)" {{.HELM_DOCS}} \
+            -s file --chart-search-root "/helm-docs/$1" \
+            -t /helm-docs/README.md.gotmpl -t /helm-docs/_templates.gotmpl \
+            ${3:+-i "/helm-docs/$3"} --dry-run > "$tmp"
+          # Strip the trailing blank line helm-docs emits (read tmp, write target —
+          # never the same file, which would truncate before the read) so git diff --check stays clean.
+          awk '{a[NR]=$0} END{n=NR; while(n>0 && a[n]=="") n--; for(i=1;i<=n;i++) print a[i]}' "$tmp" > "$root/$2"
+          rm -f "$tmp"
+        }
+        # Only regenerate READMEs carrying the helm-docs marker; curated ones are skipped.
+        for readme in $(grep -rl "Do not manually edit" core packages --include=README.md); do
+          dir="$(dirname "$readme")"
+          if [ -f "$dir/chart/Chart.yaml" ]; then
+            regen "$dir/chart" "$readme"
+          elif [ "$readme" = "core/README.md" ]; then
+            regen "core" "$readme" "$ignore"
+          else
+            echo "skip (no chart dir found): $readme" >&2; continue
+          fi
+          echo "regenerated: $readme"
+        done
+
   logs:
     desc: Tail operator logs
     cmds:
