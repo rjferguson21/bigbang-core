@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.8] (2026-10-15)
+
+### Changed
+
+- Declare admission-webhook and metrics-upgrade kube-API egress in the Package CR instead of standalone Helm-hook NetworkPolicies, letting the operator manage them as persistent, release-scoped policies.
+
+### Removed
+
+- Standalone hook NetworkPolicy templates and the `hookNetworkPolicies.egress` value.
+
 ## [87.10.1-bb.7] (2026-10-15)
 
 ### Changed

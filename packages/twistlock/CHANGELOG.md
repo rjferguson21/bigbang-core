@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.30.0-bb.8] (2026-10-15)
+
+### Changed
+
+- Declare the volume-upgrade Job's kube-API egress in the Package CR instead of a standalone Helm-hook NetworkPolicy, letting the operator manage it as a persistent, release-scoped policy.
+
+### Removed
+
+- Standalone hook NetworkPolicy template and the `hookNetworkPolicies.egress` value.
+
 ## [0.30.0-bb.7] (2026-10-15)
 
 ### Changed
