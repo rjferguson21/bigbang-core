@@ -57,21 +57,21 @@ Egress gateway configuration is not enabled.
 
 ## Helm hook networking
 
-Monitoring and Twistlock use the vendored `bigbang-operator-package` library
-from operator 0.5.0-bb.0. Their Package templates adapt the existing
-`bigbangPackage` values, preserving metadata and resource naming. The same
-network-policy declarations produce early Helm hook policies and the regular
-Package for persistent reconciliation. Helm 4 and the updated operator/CRD
-must be installed before these packages.
+Monitoring renders NetworkPolicy hooks for its admission create/patch Jobs and
+metrics-upgrade Job. Twistlock renders one for its volume-upgrade Job. Each
+policy selects only its Job pods in the release and runs before the Job using
+a lower hook weight. The charts render their regular Package CR directly;
+Job policies do not depend on the operator Helm library or cleanup markers.
 
-Monitoring declares API access for both admission webhook Jobs and the metrics
-upgrade Job. Twistlock declares it for the volume upgrade Job. Hook selectors
-include the release identity, and policy weights precede the dependent Jobs.
-The helper retains temporary policies until the operator processes its cleanup
-markers; failed operations expire according to `operatorHooks.timeoutSeconds`
-(default 1800). `operatorHooks` is a top-level chart override, including the
-shared ConfigMap location when it differs from the operator defaults.
+Policies follow the Job enablement settings and require both
+`bigbangPackage.enabled` and `bigbangPackage.networkPolicies.enabled`.
+`hookNetworkPolicies.egress` in each chart supplies the egress rules: private
+API endpoints on TCP 443/6443, cluster DNS on UDP/TCP 53, and istiod on TCP 15012.
+Override this list for other API addresses/ports, NodeLocal DNS, or a different
+mesh control-plane location. These rules render offline and are independent
+of the operator's global network definitions.
 
-API target ports and shared definitions are resolved at Helm render time.
-Offline renders cannot resolve them; use a server dry run to verify those
-lookups against the intended cluster.
+Policies use `before-hook-creation` so Helm replaces them at the next matching
+hook execution. They remain after the Jobs finish and may remain after
+uninstall or disabling the Jobs; remove them manually when retiring the
+release. Their selectors restrict access to the corresponding hook pods.

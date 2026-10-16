@@ -1,23 +1,31 @@
 {{- if .Values.bigbangPackage.enabled }}
-{{- $ctx := deepCopy . }}
-{{- $settings := deepCopy .Values.bigbangPackage }}
-{{- /* Preserve existing resource names while adapting the shared helper's values. */}}
-{{- range $key := list "istio" "networkPolicies" "routes" }}
-  {{- if hasKey $settings $key }}
-    {{- if not (hasKey (index $settings $key) "prependReleaseName") }}
-      {{- $_ := set (index $settings $key) "prependReleaseName" false }}
+apiVersion: bigbang.dev/v1alpha1
+kind: Package
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- with .Values.bigbangPackage.labels }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
+  {{- with .Values.bigbangPackage.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
   {{- end }}
-{{- end }}
-{{- $_ := set $ctx.Values "bb-common" $settings }}
-{{- range $document := regexSplit "(?m)^---[ \t]*$" (include "bigbang-operator.package" $ctx) -1 }}
-{{- $resource := fromYaml $document }}
-{{- if and (eq $resource.kind "Package") (eq $resource.metadata.name $.Release.Name) }}
-  {{- $labels := dict "app.kubernetes.io/name" $.Chart.Name "app.kubernetes.io/instance" $.Release.Name "app.kubernetes.io/managed-by" $.Release.Service }}
-  {{- $_ := set $resource.metadata "labels" (mergeOverwrite $labels (deepCopy ($.Values.bigbangPackage.labels | default dict))) }}
-  {{- $_ := set $resource.metadata "annotations" (mergeOverwrite (deepCopy ($.Values.bigbangPackage.annotations | default dict)) $resource.metadata.annotations) }}
-{{- end }}
----
-{{ toYaml $resource }}
-{{- end }}
+spec:
+  {{- with .Values.bigbangPackage.istio }}
+  istio:
+    {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
+  {{- with .Values.bigbangPackage.networkPolicies }}
+  networkPolicies:
+    {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
+  {{- with .Values.bigbangPackage.routes }}
+  routes:
+    {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
 {{- end }}

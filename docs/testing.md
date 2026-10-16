@@ -26,7 +26,7 @@ Run the render checks before changing gateway defaults or hook networking:
 python3 -m unittest discover -s tests -p '*_test.py' -v
 ```
 
-These checks require Helm 4 and PyYAML. They verify gateway identity against
+These checks require Helm and PyYAML. They verify gateway identity against
 its Deployment, route inheritance, hook policy selectors and ordering,
-release isolation, cleanup markers, and disabled networking in rendered
+release isolation, configurable egress, Job enablement, and disabled networking in rendered
 charts. They do not install workloads or verify network connectivity.

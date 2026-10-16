@@ -149,19 +149,6 @@ bigbangPackage:
           to:
             cidr:
               0.0.0.0/0:443: true
-        # Volume upgrade job needs Kubernetes API access
-        egress-kube-api:
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: twistlock-volume-upgrade-job
-              app.kubernetes.io/instance: '{{ .Release.Name }}'
-          metadata:
-            annotations:
-              "helm.sh/hook": pre-upgrade
-              "helm.sh/hook-weight": "-30"
-          to:
-            definition:
-              kubeAPI: true
 # Defenders run with host access and elevated privileges to scan the nodes,
 # and the console/volume-upgrade pods need users and volume types Big Bang's
 # kyverno policies deny; this is the same carve-out the umbrella makes for
@@ -551,3 +538,41 @@ waitJob:
     apiGroups: [""]
     resources: ["pods", "namespaces"]
     verbs: ["get", "list", "watch"]
+
+# -- Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane.
+hookNetworkPolicies:
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - port: 15012
+          protocol: TCP

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.30.0-bb.7] (2026-10-15)
+
+### Changed
+
+- Render the volume-upgrade NetworkPolicy directly as a Helm hook with configurable egress.
+
+### Removed
+
+- Shared operator Helm library dependency and hook cleanup markers.
+
 ## [0.30.0-bb.6] (2026-10-15)
 
 ### Changed

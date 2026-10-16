@@ -1,7 +1,7 @@
 <!-- Warning: Do not manually edit this file. See notes on gluon + helm-docs at the end of this file for more information. -->
 # twistlock
 
-![Version: 0.30.0-bb.6](https://img.shields.io/badge/Version-0.30.0--bb.6-informational?style=flat-square) ![AppVersion: 34.05.157](https://img.shields.io/badge/AppVersion-34.05.157-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
+![Version: 0.30.0-bb.7](https://img.shields.io/badge/Version-0.30.0--bb.7-informational?style=flat-square) ![AppVersion: 34.05.157](https://img.shields.io/badge/AppVersion-34.05.157-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
 
 Twistlock (Prisma Cloud Compute Edition) for Big Bang. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 
@@ -92,11 +92,6 @@ helm install twistlock chart/
 | bigbangPackage.networkPolicies.egress.from.*.to.k8s.tempo-tempo@tempo/tempo:9411 | bool | `false` |  |
 | bigbangPackage.networkPolicies.egress.from.twistlock-init.to.definition.kubeAPI | bool | `true` |  |
 | bigbangPackage.networkPolicies.egress.from.twistlock-console.to.cidr."0.0.0.0/0:443" | bool | `true` |  |
-| bigbangPackage.networkPolicies.egress.from.egress-kube-api.podSelector.matchLabels."app.kubernetes.io/name" | string | `"twistlock-volume-upgrade-job"` |  |
-| bigbangPackage.networkPolicies.egress.from.egress-kube-api.podSelector.matchLabels."app.kubernetes.io/instance" | string | `"{{ .Release.Name }}"` |  |
-| bigbangPackage.networkPolicies.egress.from.egress-kube-api.metadata.annotations."helm.sh/hook" | string | `"pre-upgrade"` |  |
-| bigbangPackage.networkPolicies.egress.from.egress-kube-api.metadata.annotations."helm.sh/hook-weight" | string | `"-30"` |  |
-| bigbangPackage.networkPolicies.egress.from.egress-kube-api.to.definition.kubeAPI | bool | `true` |  |
 | kyvernoPolicyException.enabled | bool | `true` |  |
 | kyvernoPolicyException.namespace | string | `"kyverno"` |  |
 | kyvernoPolicyException.policies[0] | string | `"add-default-capability-drop"` |  |
@@ -222,6 +217,7 @@ helm install twistlock chart/
 | waitJob.permissions.verbs[0] | string | `"get"` |  |
 | waitJob.permissions.verbs[1] | string | `"list"` |  |
 | waitJob.permissions.verbs[2] | string | `"watch"` |  |
+| hookNetworkPolicies | object | `{"egress":[{"ports":[{"port":443,"protocol":"TCP"},{"port":6443,"protocol":"TCP"}],"to":[{"ipBlock":{"cidr":"10.0.0.0/8"}},{"ipBlock":{"cidr":"172.16.0.0/12"}},{"ipBlock":{"cidr":"192.168.0.0/16"}}]},{"ports":[{"port":53,"protocol":"UDP"},{"port":53,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}},"podSelector":{"matchLabels":{"k8s-app":"kube-dns"}}}]},{"ports":[{"port":15012,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"istio-system"}},"podSelector":{"matchLabels":{"app":"istiod"}}}]}]}` | Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane. |
 
 ## Contributing
 

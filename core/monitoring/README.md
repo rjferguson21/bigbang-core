@@ -1,7 +1,7 @@
 <!-- Warning: Do not manually edit this file. See notes on gluon + helm-docs at the end of this file for more information. -->
 # monitoring
 
-![Version: 87.10.1-bb.6](https://img.shields.io/badge/Version-87.10.1--bb.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.92.1](https://img.shields.io/badge/AppVersion-v0.92.1-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
+![Version: 87.10.1-bb.7](https://img.shields.io/badge/Version-87.10.1--bb.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.92.1](https://img.shields.io/badge/AppVersion-v0.92.1-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
 
 kube-prometheus-stack collects Kubernetes manifests, Grafana dashboards, and Prometheus rules combined with documentation and scripts to provide easy to operate end-to-end Kubernetes cluster monitoring with Prometheus using the Prometheus Operator. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 
@@ -63,28 +63,11 @@ helm install monitoring chart/
 | bigbangPackage.istio.authorizationPolicies.enabled | bool | `true` |  |
 | bigbangPackage.istio.authorizationPolicies.generateFromNetpol | bool | `true` |  |
 | bigbangPackage.networkPolicies.enabled | bool | `false` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.enabled | bool | `true` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.hooks[0] | string | `"pre-install"` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.hooks[1] | string | `"pre-upgrade"` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.hooks[2] | string | `"post-install"` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.hooks[3] | string | `"post-upgrade"` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.hooks[4] | string | `"post-delete"` |  |
-| bigbangPackage.networkPolicies.defaultsAsHooks.weight | int | `-20` |  |
 | bigbangPackage.networkPolicies.egress.from.kube-prometheus-stack-prometheus-operator.to.definition.kubeAPI | bool | `true` | The operator must be able to read Prometheus/Alertmanager CRs from the k8s API |
 | bigbangPackage.networkPolicies.egress.from.kube-state-metrics.to.definition.kubeAPI | bool | `true` | Kube-state-metrics derives its metrics from the k8s API |
 | bigbangPackage.networkPolicies.egress.from.prometheus.to.definition.kubeAPI | bool | `true` | Prometheus must be able to read ServiceMonitor and PodMonitor resources from the k8s API |
 | bigbangPackage.networkPolicies.egress.from.prometheus.to.k8s.* | bool | `true` | Prometheus must be able to scrape any workload in the cluster |
-| bigbangPackage.networkPolicies.egress.from.admission-hooks.podSelector.matchLabels."app.kubernetes.io/instance" | string | `"{{ .Release.Name }}"` |  |
-| bigbangPackage.networkPolicies.egress.from.admission-hooks.podSelector.matchLabels."app.kubernetes.io/component" | string | `"prometheus-operator-webhook"` |  |
-| bigbangPackage.networkPolicies.egress.from.admission-hooks.metadata.annotations."helm.sh/hook" | string | `"pre-install,pre-upgrade,post-install,post-upgrade"` |  |
-| bigbangPackage.networkPolicies.egress.from.admission-hooks.metadata.annotations."helm.sh/hook-weight" | string | `"-10"` |  |
-| bigbangPackage.networkPolicies.egress.from.admission-hooks.to.definition.kubeAPI | bool | `true` |  |
 | bigbangPackage.networkPolicies.egress.from.alertmanager.to.cidr."0.0.0.0/0" | bool | `false` | Alertmanager can be configured to integrate with many external alerting systems, so we define this policy but set it to false; set it to true if you need this connectivity |
-| bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.podSelector.matchLabels."app.kubernetes.io/name" | string | `"bigbang-metrics-upgrade-job"` |  |
-| bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.podSelector.matchLabels."app.kubernetes.io/instance" | string | `"{{ .Release.Name }}"` |  |
-| bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.metadata.annotations."helm.sh/hook" | string | `"pre-upgrade"` |  |
-| bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.metadata.annotations."helm.sh/hook-weight" | string | `"-10"` |  |
-| bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.to.definition.kubeAPI | bool | `true` |  |
 | bigbangPackage.networkPolicies.ingress.to.kube-prometheus-stack-prometheus-operator:10250.from.cidr."0.0.0.0/0" | bool | `true` | Required for kube API admission webhook traffic and Prometheus scrape access. Override this CIDR from the umbrella when your control-plane range is known. |
 | bigbangPackage.networkPolicies.ingress.to.prometheus:10901.from.k8s.thanos/thanos | bool | `false` | Thanos store API access to Prometheus sidecar. Set true when Thanos is deployed. |
 | bigbangPackage.networkPolicies.ingress.to.prometheus:9090.from.k8s.tempo-tempo@tempo/tempo | bool | `false` | Tempo Prometheus remote-write/read access. Set true when Tempo is deployed. Use service-account identity format for SPIFFE principal generation. |
@@ -236,6 +219,7 @@ helm install monitoring chart/
 | prometheusRule.IstioSidecarEndpointError | bool | `true` |  |
 | prometheusRule.IstioSidecarListenerConflict | bool | `true` |  |
 | prometheusRule.IstioAmbientReadinessProbeFailures | bool | `true` |  |
+| hookNetworkPolicies | object | `{"egress":[{"ports":[{"port":443,"protocol":"TCP"},{"port":6443,"protocol":"TCP"}],"to":[{"ipBlock":{"cidr":"10.0.0.0/8"}},{"ipBlock":{"cidr":"172.16.0.0/12"}},{"ipBlock":{"cidr":"192.168.0.0/16"}}]},{"ports":[{"port":53,"protocol":"UDP"},{"port":53,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}},"podSelector":{"matchLabels":{"k8s-app":"kube-dns"}}}]},{"ports":[{"port":15012,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"istio-system"}},"podSelector":{"matchLabels":{"app":"istiod"}}}]}]}` | Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane. |
 
 ## Contributing
 
