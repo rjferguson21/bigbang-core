@@ -102,8 +102,6 @@ bigbangPackage:
     inbound:
       grafana:
         enabled: true
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - 'grafana.{{ .Values.domain }}'
         service: monitoring-grafana.monitoring.svc.cluster.local

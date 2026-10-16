@@ -84,7 +84,11 @@
     "package": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "namespace", "chart"],
+      "required": ["enabled", "namespace"],
+      "oneOf": [
+        { "required": ["chart"], "not": { "required": ["oci"] } },
+        { "required": ["oci"], "not": { "required": ["chart"] } }
+      ],
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -101,6 +105,16 @@
         "chart": {
           "type": "string",
           "description": "Chart path within the repo (the Flux source)."
+        },
+        "oci": {
+          "type": "object",
+          "description": "Published OCI Helm chart, used instead of a local chart path.",
+          "additionalProperties": false,
+          "required": ["url", "tag"],
+          "properties": {
+            "url": { "type": "string", "pattern": "^oci://.+" },
+            "tag": { "type": "string", "minLength": 1 }
+          }
         },
         "wave": {
           "type": "integer",

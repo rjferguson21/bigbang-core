@@ -260,11 +260,7 @@ upstream:
           pullPolicy: IfNotPresent
       patch:
         enabled: true
-        # This one-shot cert-signing Job calls the kube API on startup and exits;
-        # with an istio sidecar its create container races the proxy and fails
-        # (EOF to the API). holdApplicationUntilProxyStarts is a no-op under
-        # native sidecars, so keep the Job out of the mesh entirely — it has no
-        # reason to be in it.
+        # Avoid a sidecar startup dependency for the one-shot certificate Jobs.
         podAnnotations:
           sidecar.istio.io/inject: "false"
         image:
@@ -456,8 +452,6 @@ bigbangPackage:
       generateFromNetpol: true
   networkPolicies:
     enabled: false
-    defaultsAsHooks:
-      enabled: true
     egress:
       from:
         kube-prometheus-stack-prometheus-operator:
@@ -480,19 +474,6 @@ bigbangPackage:
             k8s:
               # -- Prometheus must be able to scrape any workload in the cluster
               "*": true
-        admission-create-job:
-          podSelector:
-            matchLabels:
-              app: kube-prometheus-stack-admission-create
-          metadata:
-            annotations:
-              helm.sh/hook: pre-install,pre-upgrade
-              helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
-          to:
-            definition:
-              # -- This pre-install/pre-upgrade job creates webhook resources and
-              # must reach the kubeAPI before normal release netpols exist.
-              kubeAPI: true
         alertmanager:
           to:
             cidr:
@@ -500,18 +481,6 @@ bigbangPackage:
               # alerting systems, so we define this policy but set it to false; set
               # it to true if you need this connectivity
               0.0.0.0/0: false
-        metrics-upgrade-job:
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: bigbang-metrics-upgrade-job
-          metadata:
-            annotations:
-              "helm.sh/hook": pre-upgrade
-              "helm.sh/hook-weight": "-10"
-              "helm.sh/hook-delete-policy": hook-succeeded,hook-failed,before-hook-creation
-          to:
-            definition:
-              kubeAPI: true
     ingress:
       to:
         kube-prometheus-stack-prometheus-operator:10250:
@@ -542,8 +511,6 @@ bigbangPackage:
         metadata:
           labels: {}
           annotations: {}
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - prometheus.{{ .Values.domain }}
         service: "{{ printf \"%s-%s\" (include \"kube-prometheus-stack.fullname\" .) \"kube-prometheus\" }}.{{ .Release.Namespace }}.svc.cluster.local"
@@ -556,8 +523,6 @@ bigbangPackage:
         metadata:
           labels: {}
           annotations: {}
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - alertmanager.{{ .Values.domain }}
         service: "{{ printf \"%s-%s\" (include \"kube-prometheus-stack.fullname\" .) \"kube-alertmanager\" }}.{{ .Release.Namespace }}.svc.cluster.local"
@@ -787,3 +752,41 @@ prometheusRule:
   IstioSidecarEndpointError: true
   IstioSidecarListenerConflict: true
   IstioAmbientReadinessProbeFailures: true
+
+# -- Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane.
+hookNetworkPolicies:
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - port: 15012
+          protocol: TCP

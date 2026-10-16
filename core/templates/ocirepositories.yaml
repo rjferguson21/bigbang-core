@@ -1,0 +1,21 @@
+{{- $v := fromYaml (include "core.merged" .) }}
+{{- $ambient := dig "ambient" "enabled" false ($v.istio | default dict) }}
+{{- range $name, $pkg := $v.packages }}
+{{- if and $pkg.oci (eq (include "core.pkgEnabled" (dict "pkg" $pkg "ambient" $ambient "groups" $v.groups)) "true") }}
+{{- $flux := mergeOverwrite (deepCopy $v.flux) (deepCopy ($pkg.flux | default dict)) }}
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  interval: {{ $flux.interval }}
+  url: {{ $pkg.oci.url | quote }}
+  ref:
+    tag: {{ $pkg.oci.tag | quote }}
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+{{- end }}
+{{- end }}

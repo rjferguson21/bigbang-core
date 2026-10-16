@@ -85,7 +85,9 @@ packages:
     enabled: true
     releaseName: bigbang-operator
     namespace: bigbang-operator
-    chart: core/bigbang-operator/chart
+    oci:
+      url: oci://ghcr.io/rjferguson21/charts/bigbang-operator
+      tag: 0.5.0-bb.0
     wave: 0
     values:
       # Shared egress/ingress definitions every Package can reference via
@@ -93,6 +95,17 @@ packages:
       # per-package; package-local definitions still override).
       globalConfig:
         create: true
+        routes:
+          defaults:
+            inbound:
+              gateways:
+                - istio-gateway/public-ingressgateway
+        gateways:
+          istio-gateway/public-ingressgateway:
+            podSelector:
+              matchLabels:
+                app: public-ingressgateway
+            serviceAccountName: public-ingressgateway
         # Shapes match the umbrella's global networkPolicies.*.definitions
         # defaults; narrow the CIDRs per environment as needed.
         egressDefinitions:

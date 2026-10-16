@@ -20,8 +20,6 @@ bigbangPackage:
     inbound:
       policy-reporter-ui:
         enabled: true
-        gateways:
-          - istio-gateway/public-ingressgateway
         hosts:
           - policyreporter.dev.bigbang.mil
         service: policy-reporter-ui.kyverno-reporter.svc.cluster.local
