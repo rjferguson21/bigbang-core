@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] (2026-10-16)
+
+### Added
+
+- Shared `control-plane-subnets` ingress definition (private RFC1918 ranges) in the operator globalConfig; istiod and monitoring reference it for their control-plane webhook ingress instead of inlining `0.0.0.0/0`.
+
 ## [0.4.0] (2026-10-15)
 
 ### Changed

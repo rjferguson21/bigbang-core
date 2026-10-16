@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.9] (2026-10-16)
+
+### Changed
+
+- Reference the operator's shared `control-plane-subnets` ingress definition for the prometheus-operator webhook (`:10250`) instead of inlining `0.0.0.0/0`.
+
 ## [87.10.1-bb.8] (2026-10-15)
 
 ### Changed

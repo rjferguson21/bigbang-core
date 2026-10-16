@@ -1,7 +1,7 @@
 <!-- Warning: Do not manually edit this file. See notes on gluon + helm-docs at the end of this file for more information. -->
 # bigbang-core
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square) ![Maintenance Track: unknown](https://img.shields.io/badge/Maintenance_Track-unknown-red?style=flat-square)
+![Version: 0.4.1](https://img.shields.io/badge/Version-0.4.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square) ![Maintenance Track: unknown](https://img.shields.io/badge/Maintenance_Track-unknown-red?style=flat-square)
 
 Flux parent chart for the Big Bang core stack (Istio + Kyverno). Renders one Flux HelmRelease per core package, sequenced with dependsOn.
 
@@ -92,6 +92,9 @@ helm install bigbang-core chart/
 | packages.bigbang-operator.values.globalConfig.ingressDefinitions.load-balancer-subnets.from[0].ipBlock.cidr | string | `"192.168.0.0/16"` |  |
 | packages.bigbang-operator.values.globalConfig.ingressDefinitions.load-balancer-subnets.from[1].ipBlock.cidr | string | `"172.16.0.0/12"` |  |
 | packages.bigbang-operator.values.globalConfig.ingressDefinitions.load-balancer-subnets.from[2].ipBlock.cidr | string | `"10.0.0.0/8"` |  |
+| packages.bigbang-operator.values.globalConfig.ingressDefinitions.control-plane-subnets.from[0].ipBlock.cidr | string | `"192.168.0.0/16"` |  |
+| packages.bigbang-operator.values.globalConfig.ingressDefinitions.control-plane-subnets.from[1].ipBlock.cidr | string | `"172.16.0.0/12"` |  |
+| packages.bigbang-operator.values.globalConfig.ingressDefinitions.control-plane-subnets.from[2].ipBlock.cidr | string | `"10.0.0.0/8"` |  |
 | packages.prometheus-operator-crds.enabled | bool | `true` |  |
 | packages.prometheus-operator-crds.releaseName | string | `"prometheus-operator-crds"` |  |
 | packages.prometheus-operator-crds.namespace | string | `"monitoring"` |  |

@@ -2,7 +2,7 @@ apiVersion: v2
 name: bigbang-core
 description: Flux parent chart for the Big Bang core stack (Istio + Kyverno). Renders one Flux HelmRelease per core package, sequenced with dependsOn.
 type: application
-version: 0.4.0
+version: 0.4.1
 appVersion: "0.1.0"
 keywords:
   - bigbang

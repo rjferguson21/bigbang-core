@@ -502,10 +502,10 @@ bigbangPackage:
       to:
         kube-prometheus-stack-prometheus-operator:10250:
           from:
-            cidr:
-              # -- Required for kube API admission webhook traffic and Prometheus scrape access.
-              # Override this CIDR from the umbrella when your control-plane range is known.
-              0.0.0.0/0: true
+            definition:
+              # -- kube API admission webhook traffic and Prometheus scrape access.
+              # Narrow via the operator's shared control-plane-subnets definition.
+              control-plane-subnets: true
         prometheus:10901:
           from:
             k8s:

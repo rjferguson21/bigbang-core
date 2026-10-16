@@ -157,6 +157,19 @@ packages:
                 cidr: 172.16.0.0/12
             - ipBlock:
                 cidr: 10.0.0.0/8
+          # Sources allowed to reach control-plane-managed webhook ports (kube
+          # API server, nodes). Referenced by istiod and monitoring. Private
+          # ranges cover in-cluster node/pod sources; narrow to your node subnet
+          # per environment, or widen for a managed control plane whose API
+          # server is off-cluster.
+          control-plane-subnets:
+            from:
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 10.0.0.0/8
   # prometheus-operator CRDs (ServiceMonitor etc.) — needed by monitoring
   # and alloy.
   prometheus-operator-crds:
