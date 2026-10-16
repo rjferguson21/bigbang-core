@@ -13,6 +13,11 @@ metadata:
 spec:
   releaseName: {{ $pkg.releaseName | default $name }}
   targetNamespace: {{ $pkg.namespace }}
+  {{- if $pkg.oci }}
+  chartRef:
+    kind: OCIRepository
+    name: {{ $name }}
+  {{- else }}
   chart:
     spec:
       chart: {{ $pkg.chart }}
@@ -23,6 +28,7 @@ spec:
         kind: {{ $v.source.kind }}
         name: {{ $v.source.name }}
         namespace: {{ $v.source.namespace | default $.Release.Namespace }}
+  {{- end }}
   {{- toYaml $flux | nindent 2 }}
   {{- $deps := list }}
   {{- range $depName, $dep := $v.packages }}

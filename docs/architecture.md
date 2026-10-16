@@ -11,13 +11,19 @@
   `bigbangPackage` values block (istio, networkPolicies, routes, in the
   bb-common shapes) that becomes the Package CR, and an `upstream` block
   passed to the vendored upstream chart. Each package has its own README.
-- **The operator** (`core/bigbang-operator`, wave 0) must be running before
-  anything else, since every chart in both trees emits a Package CR.
+- **The operator** (published OCI chart, wave 0) must be running before
+  anything else, since every chart in both trees emits a Package CR. Core renders
+  an `OCIRepository` for the pinned chart and a HelmRelease with `chartRef`;
+  the published chart installs the operator and its CRD. Configure the URL and
+  tag through `packages.bigbang-operator.oci` and deployment settings through
+  `.values`. Other packages continue using local `chart` paths. The Zarf bundle
+  includes the operator chart as an OCI artifact alongside its image, so its
+  agent can redirect the OCIRepository to the bundled registry.
 
 ## Repo layout
 
 ```
-core/              # Flux parent chart + the core packages (operator, Istio, Kyverno, observability)
+core/              # Flux parent chart + local core packages (Istio, Kyverno, observability)
 packages/          # app packages (keycloak, gitlab, kiali, logging, security tools, …)
 dev/values/        # overlays for the dev/CI clusters (upstream-images, per-package tweaks)
 tests/             # shared end-to-end suite, run against a deployed cluster

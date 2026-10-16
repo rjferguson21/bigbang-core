@@ -7,7 +7,7 @@ metadata:
     policies + reporter, monitoring, Loki, Grafana, Alloy) for airgapped
     install via Zarf. Mirrors this repo into the in-cluster git and the core
     images into the in-cluster registry; the zarf-agent rewrites the Flux
-    GitRepository and pod image references automatically.
+    GitRepository, OCIRepository, and pod image references automatically.
   url: https://github.com/rjferguson21/bigbang-core
 
 components:
@@ -18,8 +18,8 @@ components:
   - name: bigbang-core
     required: true
     description: "GitRepository + parent HelmRelease (full default stack), reconciled by Flux"
-    # Mirror the whole repo into the in-cluster gitea (the core charts are
-    # vendored, so no helm-repo pulls happen at reconcile time). Resolved at
+    # Mirror the local charts into gitea; the operator OCI chart is bundled
+    # alongside the images below. Resolved at
     # `zarf package create` — swap to a ###ZARF_PKG_TMPL_*### to parameterize.
     repos:
       - "https://github.com/rjferguson21/bigbang-core.git"
@@ -34,7 +34,9 @@ components:
     # included. The zarf-agent rewrites these refs on the running pods to the
     # in-cluster registry.
     images:
-      - ghcr.io/rjferguson21/bigbang-operator:0.3.2
+      # Helm OCI artifact consumed by the operator's Flux OCIRepository.
+      - ghcr.io/rjferguson21/charts/bigbang-operator:0.5.0-bb.0
+      - ghcr.io/rjferguson21/bigbang-operator:0.5.0-bb.0
       - registry1.dso.mil/ironbank/big-bang/base:2.1.0
       - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.0.1
       - registry1.dso.mil/ironbank/big-bang/grafana/grafana-plugins:13.2.1

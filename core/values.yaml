@@ -85,7 +85,9 @@ packages:
     enabled: true
     releaseName: bigbang-operator
     namespace: bigbang-operator
-    chart: core/bigbang-operator/chart
+    oci:
+      url: oci://ghcr.io/rjferguson21/charts/bigbang-operator
+      tag: 0.5.0-bb.0
     wave: 0
     values:
       # Shared egress/ingress definitions every Package can reference via

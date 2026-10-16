@@ -37,10 +37,9 @@ class OperatorIntegration(unittest.TestCase):
     def test_global_gateway_matches_deployment(self):
         releases = {r["metadata"]["name"]: r["spec"] for r in kind(render("core", "core", "flux-system"), "HelmRelease")}
         operator = releases["bigbang-operator"]
-        docs = render(operator["chart"]["spec"]["chart"], operator["releaseName"], operator["targetNamespace"], operator["values"])
-        config = kind(docs, "ConfigMap")[0]["data"]
-        defaults = yaml.safe_load(config["routes"])["defaults"]["inbound"]["gateways"]
-        definitions = yaml.safe_load(config["gateways"])
+        config = operator["values"]["globalConfig"]
+        defaults = config["routes"]["defaults"]["inbound"]["gateways"]
+        definitions = config["gateways"]
         gateway = releases["istio-gateway"]
         pods = kind(render(gateway["chart"]["spec"]["chart"], gateway["releaseName"], gateway["targetNamespace"], gateway["values"]), "Deployment")
         pod = pods[0]["spec"]["template"]
@@ -56,9 +55,37 @@ class OperatorIntegration(unittest.TestCase):
                 self.assertNotIn("gateways", route, name)
         reporter = kind(render("packages/kyverno-reporter/chart", "reporter", "reporter"), "Package")[0]
         self.assertTrue(all("gateways" not in r for r in reporter["spec"]["routes"]["inbound"].values()))
-        crd = kind(render("core/bigbang-operator/chart", "operator", "operator"), "CustomResourceDefinition")[0]
-        schema = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
-        self.assertIn("defaults", schema["properties"]["spec"]["properties"]["routes"]["properties"])
+
+    def test_oci_chart_reference_and_bundle(self):
+        docs = render("core", "core", "flux-system")
+        source = kind(docs, "OCIRepository")[0]
+        releases = {r["metadata"]["name"]: r["spec"] for r in kind(docs, "HelmRelease")}
+        operator = releases["bigbang-operator"]
+        self.assertEqual(operator["chartRef"], {"kind": "OCIRepository", "name": source["metadata"]["name"]})
+        self.assertNotIn("chart", operator)
+        self.assertEqual(source["metadata"]["namespace"], "flux-system")
+        self.assertEqual(source["spec"]["layerSelector"]["operation"], "copy")
+        self.assertEqual(operator["releaseName"], "bigbang-operator")
+        self.assertEqual(operator["targetNamespace"], "bigbang-operator")
+        self.assertIn({"name": "bigbang-operator"}, releases["monitoring"]["dependsOn"])
+        self.assertEqual(releases["monitoring"]["chart"]["spec"]["sourceRef"]["kind"], "GitRepository")
+        bundle = yaml.safe_load((ROOT / "zarf/zarf.yaml").read_text())
+        artifact = source["spec"]["url"].removeprefix("oci://") + ":" + source["spec"]["ref"]["tag"]
+        self.assertIn(artifact, bundle["components"][0]["images"])
+        self.assertIn("ghcr.io/rjferguson21/bigbang-operator:" + source["spec"]["ref"]["tag"], bundle["components"][0]["images"])
+        self.assertFalse((ROOT / "core/bigbang-operator").exists())
+
+    def test_disabled_oci_package_and_profiles(self):
+        for values in ({"packages": {"bigbang-operator": {"enabled": False}}},
+                       {"packages": {"bigbang-operator": {"group": "external"}}, "groups": {"external": {"enabled": False}}}):
+            docs = render("core", "core", "flux-system", values)
+            self.assertFalse(kind(docs, "OCIRepository"))
+            self.assertNotIn("bigbang-operator", [r["metadata"]["name"] for r in kind(docs, "HelmRelease")])
+        minimal = render("core", "core", "flux-system", {"profile": "minimal"})
+        self.assertEqual(len(kind(minimal, "OCIRepository")), 1)
+        for invalid in ({"chart": "core/other"}, {"oci": {"tag": ""}}, {"oci": {"url": "https://invalid.example"}}):
+            with self.assertRaises(AssertionError):
+                render("core", "core", "flux-system", {"packages": {"bigbang-operator": invalid}})
 
     def check_hooks(self, docs, release, expected_jobs):
         policies = kind(docs, "NetworkPolicy")
