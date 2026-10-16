@@ -1,7 +1,7 @@
 <!-- Warning: Do not manually edit this file. See notes on gluon + helm-docs at the end of this file for more information. -->
 # monitoring
 
-![Version: 87.10.1-bb.8](https://img.shields.io/badge/Version-87.10.1--bb.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.92.1](https://img.shields.io/badge/AppVersion-v0.92.1-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
+![Version: 87.10.1-bb.9](https://img.shields.io/badge/Version-87.10.1--bb.9-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.92.1](https://img.shields.io/badge/AppVersion-v0.92.1-informational?style=flat-square) ![Maintenance Track: bb_integrated](https://img.shields.io/badge/Maintenance_Track-bb_integrated-green?style=flat-square)
 
 kube-prometheus-stack collects Kubernetes manifests, Grafana dashboards, and Prometheus rules combined with documentation and scripts to provide easy to operate end-to-end Kubernetes cluster monitoring with Prometheus using the Prometheus Operator. This variant delegates Istio and NetworkPolicy configuration to the Big Bang operator via a Package CR instead of bb-common.
 
@@ -72,7 +72,7 @@ helm install monitoring chart/
 | bigbangPackage.networkPolicies.egress.from.admission-webhook-job.to.definition.kubeAPI | bool | `true` | The create/patch Jobs reach the kube API to generate the webhook cert and patch the ValidatingWebhookConfiguration |
 | bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.podSelector.matchLabels."app.kubernetes.io/name" | string | `"bigbang-metrics-upgrade-job"` |  |
 | bigbangPackage.networkPolicies.egress.from.metrics-upgrade-job.to.definition.kubeAPI | bool | `true` | The clean-upgrade Job reaches the kube API to prune removed resources |
-| bigbangPackage.networkPolicies.ingress.to.kube-prometheus-stack-prometheus-operator:10250.from.cidr."0.0.0.0/0" | bool | `true` | Required for kube API admission webhook traffic and Prometheus scrape access. Override this CIDR from the umbrella when your control-plane range is known. |
+| bigbangPackage.networkPolicies.ingress.to.kube-prometheus-stack-prometheus-operator:10250.from.definition.control-plane-subnets | bool | `true` | kube API admission webhook traffic and Prometheus scrape access. Narrow via the operator's shared control-plane-subnets definition. |
 | bigbangPackage.networkPolicies.ingress.to.prometheus:10901.from.k8s.thanos/thanos | bool | `false` | Thanos store API access to Prometheus sidecar. Set true when Thanos is deployed. |
 | bigbangPackage.networkPolicies.ingress.to.prometheus:9090.from.k8s.tempo-tempo@tempo/tempo | bool | `false` | Tempo Prometheus remote-write/read access. Set true when Tempo is deployed. Use service-account identity format for SPIFFE principal generation. |
 | bigbangPackage.networkPolicies.ingress.to.prometheus:9090.from.k8s.kiali-service-account@kiali/kiali | bool | `false` | Kiali Prometheus access. Set true when Kiali is deployed. Use service-account identity format for SPIFFE principal generation. |

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.30.4-bb.2] (2026-10-16)
+
+### Changed
+
+- Reference the operator's shared `control-plane-subnets` ingress definition for the webhook ports (`:443,15017`) instead of inlining `0.0.0.0/0`.
+
 ## [1.30.4-bb.1] (2026-09-27)
 
 ### Added

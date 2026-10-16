@@ -45,8 +45,9 @@ bigbangPackage:
               monitoring/prometheus: true
         istiod:[443,15017]: # Access to webhook required by k8s control plane and envoy proxies
           from:
-            cidr:
-              0.0.0.0/0: true
+            definition:
+              # Narrow via the operator's shared control-plane-subnets definition.
+              control-plane-subnets: true
         istiod:[15010,15012]: # Required by both sidecars and ambient mesh (15010 may also be required for apps not using mTLS or external to mesh)
           from:
             k8s:
