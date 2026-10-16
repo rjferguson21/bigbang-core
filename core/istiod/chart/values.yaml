@@ -43,7 +43,7 @@ bigbangPackage:
             k8s:
               kiali/kiali: true
               monitoring/prometheus: true
-        istiod:[443,15017]: # Access to webhook required by k8s control plane and envoy proxies
+        istiod:[443,15017]: # Validation/injection webhook — called by the kube-apiserver (proxies use 15010/15012 below)
           from:
             definition:
               # Narrow via the operator's shared control-plane-subnets definition.
