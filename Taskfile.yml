@@ -308,8 +308,8 @@ tasks:
             certs="$tmp/ingress-certs.yaml"
             curl -fsSL -o "$certs" "{{.BIGBANG_CERTS_URL}}"
           fi
-          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
-          yq -r '.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
+          yq -r '.packages.istioGateway.values.gateways.public.gatewayCerts[0].tls.cert' "$certs" > "$tmp/tls.crt"
+          yq -r '.packages.istioGateway.values.gateways.public.gatewayCerts[0].tls.key' "$certs" > "$tmp/tls.key"
           kubectl --context {{.CTX}} -n istio-gateway create secret tls public-cert --cert="$tmp/tls.crt" --key="$tmp/tls.key"
           rm -rf "$tmp"
         fi
