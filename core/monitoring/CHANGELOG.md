@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [87.10.1-bb.10] (2026-10-28)
+
+### Added
+
+- Restore the admission-webhook and metrics-upgrade kube-API egress as Helm-hook NetworkPolicies and the `hookNetworkPolicies.egress` value.
+
+### Removed
+
+- The admission-webhook and metrics-upgrade `networkPolicies.egress` entries from the Package CR.
+
+### Fixed
+
+- Monitoring pre-install admission-webhook hook Job failing with `connection reset by peer` when grafana's namespace default-deny pre-exists (#25); the hook netpol now exists in the hook phase again rather than arriving via the post-hook Package CR.
+
 ## [87.10.1-bb.9] (2026-10-16)
 
 ### Changed

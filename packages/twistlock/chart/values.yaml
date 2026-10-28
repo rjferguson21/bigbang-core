@@ -144,11 +144,6 @@ bigbangPackage:
           to:
             definition:
               kubeAPI: true
-        # Volume-upgrade pre-upgrade Job reaches the kube API
-        twistlock-volume-upgrade-job:
-          to:
-            definition:
-              kubeAPI: true
         # Console needs external HTTPS for Twistlock intelligence updates
         twistlock-console:
           to:
@@ -543,3 +538,41 @@ waitJob:
     apiGroups: [""]
     resources: ["pods", "namespaces"]
     verbs: ["get", "list", "watch"]
+
+# -- Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane.
+hookNetworkPolicies:
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - port: 15012
+          protocol: TCP

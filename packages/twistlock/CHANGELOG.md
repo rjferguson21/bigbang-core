@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.30.0-bb.9] (2026-10-28)
+
+### Added
+
+- Restore the volume-upgrade kube-API egress as a Helm-hook NetworkPolicy and the `hookNetworkPolicies.egress` value.
+
+### Removed
+
+- The volume-upgrade `networkPolicies.egress` entry from the Package CR.
+
+### Fixed
+
+- Init Job kube-API egress now exists in the hook phase rather than arriving via the post-hook Package CR (#25).
+
 ## [0.30.0-bb.8] (2026-10-15)
 
 ### Changed
