@@ -32,6 +32,14 @@ jobs:
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
           k3d version
 
+      # k3d nodes plus flux and istio controllers exhaust the runner's default
+      # inotify instances, which crashes ztunnel's cert watcher ("Too many open
+      # files"). Raise the limits before creating the cluster.
+      - name: Raise inotify limits
+        run: |
+          sudo sysctl -w fs.inotify.max_user_instances=1024
+          sudo sysctl -w fs.inotify.max_user_watches=1048576
+
       # package:deploy uses `helm upgrade --force-conflicts`, a Helm 4
       # (server-side apply) flag; the runner image ships Helm 3.
       - name: Install Helm
