@@ -481,23 +481,6 @@ bigbangPackage:
               # alerting systems, so we define this policy but set it to false; set
               # it to true if you need this connectivity
               0.0.0.0/0: false
-        admission-webhook-job:
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/component: prometheus-operator-webhook
-          to:
-            definition:
-              # -- The create/patch Jobs reach the kube API to generate the webhook
-              # cert and patch the ValidatingWebhookConfiguration
-              kubeAPI: true
-        metrics-upgrade-job:
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: bigbang-metrics-upgrade-job
-          to:
-            definition:
-              # -- The clean-upgrade Job reaches the kube API to prune removed resources
-              kubeAPI: true
     ingress:
       to:
         kube-prometheus-stack-prometheus-operator:10250:
@@ -769,3 +752,41 @@ prometheusRule:
   IstioSidecarEndpointError: true
   IstioSidecarListenerConflict: true
   IstioAmbientReadinessProbeFailures: true
+
+# -- Egress rules for the chart's hook Jobs. Override for your API endpoints, DNS, or mesh control plane.
+hookNetworkPolicies:
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - port: 15012
+          protocol: TCP

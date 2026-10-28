@@ -87,43 +87,92 @@ class OperatorIntegration(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 render("core", "core", "flux-system", {"packages": {"bigbang-operator": invalid}})
 
-    def check_cr_egress(self, docs, release, job_keys):
-        # The chart ships no NetworkPolicies itself — the operator derives them
-        # from the Package CR egress declarations below.
-        self.assertFalse(kind(docs, "NetworkPolicy"))
+    def check_hooks(self, docs, release, expected_jobs):
+        policies = kind(docs, "NetworkPolicy")
         packages = kind(docs, "Package")
+        regular = next(p for p in packages if p["metadata"]["name"] == release)
         self.assertEqual(len(packages), 1)
-        regular = packages[0]
-        self.assertEqual(regular["metadata"]["name"], release)
-        egress = regular["spec"]["networkPolicies"]["egress"]["from"]
-        for rule in egress.values():
+        self.assertFalse(any(key.startswith("hooks.bigbang.dev/") for key in regular["metadata"].get("annotations", {})))
+        self.assertNotIn("defaultsAsHooks", regular["spec"]["networkPolicies"])
+        for rule in regular["spec"]["networkPolicies"]["egress"]["from"].values():
             self.assertNotIn("helm.sh/hook", rule.get("metadata", {}).get("annotations", {}))
         jobs = {j["metadata"]["name"]: j for j in kind(docs, "Job")}
-        for job_name, key in job_keys.items():
-            self.assertIn(key, egress, key)
-            rule = egress[key]
-            self.assertTrue(rule["to"]["definition"]["kubeAPI"], key)
-            selector = rule["podSelector"] if "podSelector" in rule else {"matchLabels": {"app.kubernetes.io/name": key}}
-            labels = jobs[job_name]["spec"]["template"]["metadata"]["labels"]
-            self.assertTrue(matches(selector, labels), (job_name, key))
+        for name in expected_jobs:
+            job = jobs[name]
+            annotations = job["metadata"]["annotations"]
+            labels = job["spec"]["template"]["metadata"]["labels"]
+            for phase in annotations["helm.sh/hook"].split(","):
+                allows = [p for p in policies if p["spec"]["podSelector"].get("matchLabels", {}).get("app.kubernetes.io/instance") == release
+                          and matches(p["spec"]["podSelector"], labels)
+                          and phase in p["metadata"]["annotations"]["helm.sh/hook"].split(",")
+                          and any("ipBlock" in peer for rule in p["spec"].get("egress", []) for peer in rule.get("to", []))]
+                self.assertEqual(len(allows), 1, (name, phase))
+                policy = allows[0]
+                metadata = policy["metadata"]
+                self.assertLess(int(metadata["annotations"]["helm.sh/hook-weight"]), int(annotations.get("helm.sh/hook-weight", 0)))
+                self.assertEqual(metadata["annotations"]["helm.sh/hook-delete-policy"], "before-hook-creation")
+                self.assertEqual(metadata["namespace"], job["metadata"].get("namespace", regular["metadata"]["namespace"]))
+                self.assertEqual(policy["spec"]["policyTypes"], ["Egress"])
+                api_rule, dns_rule, mesh_rule = policy["spec"]["egress"]
+                self.assertEqual({p["port"] for p in api_rule["ports"]}, {443, 6443})
+                self.assertEqual({p["protocol"] for p in dns_rule["ports"]}, {"TCP", "UDP"})
+                self.assertTrue(all(p["port"] == 53 for p in dns_rule["ports"]))
+                self.assertEqual(mesh_rule["ports"], [{"port": 15012, "protocol": "TCP"}])
+                self.assertNotIn("ownerReferences", metadata)
+                self.assertNotIn("bigbang.dev/package", metadata.get("labels", {}))
+                other_release = dict(labels, **{"app.kubernetes.io/instance": "unrelated-release"})
+                self.assertFalse(matches(policy["spec"]["podSelector"], other_release))
 
-    def test_monitoring_cr_egress_in_both_mesh_modes(self):
+    def test_monitoring_hooks_in_both_mesh_modes(self):
         for ambient in (False, True):
             with self.subTest(ambient=ambient):
                 values = {"bigbangPackage": {"networkPolicies": {"enabled": True}, "istio": {"enabled": True, "ambient": {"enabled": ambient}}, "labels": {"team": "observability"}, "annotations": {"example.com/owner": "team"}}, "cleanUpgrade": {"enabled": True}}
                 docs = render("core/monitoring/chart", "monitoring-monitoring", "monitoring", values, upgrade=True)
-                self.check_cr_egress(docs, "monitoring-monitoring", {
-                    "monitoring-monitoring-kube-admission-create": "admission-webhook-job",
-                    "monitoring-monitoring-kube-admission-patch": "admission-webhook-job",
-                    "metrics-clean-upgrade": "metrics-upgrade-job"})
+                self.check_hooks(docs, "monitoring-monitoring", ["monitoring-monitoring-kube-admission-create", "monitoring-monitoring-kube-admission-patch", "metrics-clean-upgrade"])
                 regular = next(p for p in kind(docs, "Package") if p["metadata"]["name"] == "monitoring-monitoring")
                 self.assertEqual(regular["metadata"]["labels"]["team"], "observability")
                 self.assertEqual(regular["metadata"]["annotations"]["example.com/owner"], "team")
                 self.assertNotIn("prependReleaseName", regular["spec"]["routes"])
 
-    def test_twistlock_volume_upgrade_cr_egress(self):
+    def test_twistlock_volume_upgrade_hook(self):
         docs = render("packages/twistlock/chart", "twistlock", "twistlock", {"console": {"volumeUpgrade": True}}, upgrade=True)
-        self.check_cr_egress(docs, "twistlock", {"volume-upgrade-job": "twistlock-volume-upgrade-job"})
+        self.check_hooks(docs, "twistlock", ["volume-upgrade-job"])
+
+    def test_hook_policies_follow_job_switches(self):
+        monitoring = "core/monitoring/chart"
+        for switches in ({"enabled": False}, {"admissionWebhooks": {"enabled": False}},
+                         {"admissionWebhooks": {"patch": {"enabled": False}}},
+                         {"admissionWebhooks": {"certManager": {"enabled": True}}}):
+            values = {"bigbangPackage": {"networkPolicies": {"enabled": True}},
+                      "cleanUpgrade": {"enabled": False}, "upstream": {"prometheusOperator": switches}}
+            docs = render(monitoring, "monitoring", "monitoring", values)
+            self.assertFalse(kind(docs, "NetworkPolicy"))
+        for values, upgrade in (({}, False), ({"console": {"volumeUpgrade": False}}, True),
+                                ({"deploymentMode": {"defenderOnly": True}}, True)):
+            if values.get("deploymentMode", {}).get("defenderOnly"):
+                keys = ("service_parameter", "defender_ca", "defender_client_cert", "defender_client_key",
+                        "defender_ca_old", "defender_client_cert_old", "defender_client_key_old",
+                        "admission_cert", "admission_key")
+                values["defender"] = {"secrets": dict.fromkeys(keys, "dGVzdA=="),
+                                      "ws_address": "wss://console.example:8084", "clusterName": "test"}
+            docs = render("packages/twistlock/chart", "twistlock", "twistlock", values, upgrade=upgrade)
+            self.assertFalse(kind(docs, "NetworkPolicy"))
+        docs = render(monitoring, "monitoring", "monitoring", {
+            "bigbangPackage": {"networkPolicies": {"enabled": True}},
+            "upstream": {"namespaceOverride": "custom-monitoring"}})
+        policy = kind(docs, "NetworkPolicy")[0]
+        self.assertEqual(policy["metadata"]["namespace"], "custom-monitoring")
+        self.assertTrue(all(j["metadata"]["namespace"] == "custom-monitoring" for j in kind(docs, "Job")))
+
+    def test_hook_egress_override(self):
+        egress = [{"to": [{"ipBlock": {"cidr": "203.0.113.10/32"}}],
+                   "ports": [{"port": 7443, "protocol": "TCP"}]}]
+        for chart in ("core/monitoring/chart", "packages/twistlock/chart"):
+            values = {"bigbangPackage": {"networkPolicies": {"enabled": True}},
+                      "hookNetworkPolicies": {"egress": egress}, "cleanUpgrade": {"enabled": True}}
+            policies = kind(render(chart, "example", "example", values, upgrade=True), "NetworkPolicy")
+            self.assertTrue(policies)
+            self.assertTrue(all(p["spec"]["egress"] == egress for p in policies))
 
     def test_disabled_integration_and_networking(self):
         for chart in ("core/monitoring/chart", "packages/twistlock/chart"):

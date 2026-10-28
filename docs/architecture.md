@@ -55,17 +55,23 @@ installs of these charts need one of those defaults or an explicit route list.
 Gateway definitions also apply to packages that retain explicit gateway lists.
 Egress gateway configuration is not enabled.
 
-## Job networking
+## Helm hook networking
 
-Monitoring's admission create/patch Jobs and metrics-upgrade Job, and
-Twistlock's volume-upgrade Job, call the kube API before the release's normal
-network policies exist. Rather than ship standalone NetworkPolicy hooks, each
-chart declares the kube-API egress for those Job pods directly in its Package
-CR (`networkPolicies.egress.from`, `definition.kubeAPI: true`). The operator
-renders these as persistent, release-scoped policies alongside the namespace
-default-deny, so on upgrade the allow is already present when the Job runs.
+Monitoring renders NetworkPolicy hooks for its admission create/patch Jobs and
+metrics-upgrade Job. Twistlock renders one for its volume-upgrade Job. Each
+policy selects only its Job pods in the release and runs before the Job using
+a lower hook weight. The charts render their regular Package CR directly;
+Job policies do not depend on the operator Helm library or cleanup markers.
 
-DNS and istiod egress for the Job pods come from the operator's default egress
-policies (`allowKubeDns`, `allowIstiod`); only the kube-API allow is declared
-per Job. The allows are present whenever `bigbangPackage.networkPolicies` is
-enabled; an allow that matches a Job which never runs is harmless.
+Policies follow the Job enablement settings and require both
+`bigbangPackage.enabled` and `bigbangPackage.networkPolicies.enabled`.
+`hookNetworkPolicies.egress` in each chart supplies the egress rules: private
+API endpoints on TCP 443/6443, cluster DNS on UDP/TCP 53, and istiod on TCP 15012.
+Override this list for other API addresses/ports, NodeLocal DNS, or a different
+mesh control-plane location. These rules render offline and are independent
+of the operator's global network definitions.
+
+Policies use `before-hook-creation` so Helm replaces them at the next matching
+hook execution. They remain after the Jobs finish and may remain after
+uninstall or disabling the Jobs; remove them manually when retiring the
+release. Their selectors restrict access to the corresponding hook pods.
